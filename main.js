@@ -1,7 +1,7 @@
 // ===== UI controller, game loop, save/load =====
 import {
   POSITIONS, ARCHETYPES, RATINGS, CATEGORIES, LEAGUES, CONTRACTS, SEASON_GAMES,
-  FIRST_NAMES, LAST_NAMES, AD_SPONSORS, ADS, TRAINING, MAX_RATING, LEGACY_RATING_BONUS, LEGACY_EARN_BONUS, AWAY_EARN_MULT, BODY, INVEST,
+  FIRST_NAMES, LAST_NAMES, AD_SPONSORS, ADS, TRAINING, MAX_RATING, LEGACY_RATING_BONUS, LEGACY_EARN_BONUS, AWAY_EARN_MULT, BODY, INVEST, CLUTCH, DAILY,
 } from './data.js';
 import { simulateGame } from './sim.js';
 import * as E from './engine.js';
@@ -219,13 +219,7 @@ function buildRatingRows() {
 
 function buyRating(id) {
   const amt = ui.buy === 'max' ? 9999 : ui.buy;
-  let got;
-  if (state.ratings[id] >= E.ratingCap(state, id)) {
-    got = E.breakCap(state, id) ? 1 : 0;
-    if (got) toast(`Cap Breaker used: ${RATING_NAME[id]} cap is now ${E.ratingCap(state, id)}`, false);
-  } else {
-    got = E.upgrade(state, id, amt);
-  }
+  const got = E.upgrade(state, id, amt);
   if (got > 0) {
     const row = ui.rowEls[id];
     row.classList.remove('flash'); void row.offsetWidth; row.classList.add('flash');
@@ -249,31 +243,31 @@ function renderRatings() {
     row.querySelector('.val').textContent = v;
     const btn = row.querySelector('button');
     const costEl = row.querySelector('.cost');
-    if (v >= cap) {
-      if (cap >= MAX_RATING) {
-        costEl.textContent = 'MAX';
-        btn.textContent = '—';
-        btn.disabled = true;
-      } else {
-        costEl.textContent = `Cap ${cap}`;
-        costEl.title = 'Capped. Spend a Cap Breaker to raise this cap by 5.';
-        btn.textContent = 'Break +5';
-        btn.disabled = state.capBreakers < 1;
-      }
+    if (v >= MAX_RATING) {
+      costEl.textContent = 'MAX';
+      btn.textContent = '—';
+      btn.disabled = true;
       continue;
     }
-    let n, total;
-    if (ui.buy === 'max') {
-      ({ n, total } = E.maxAffordable(r.id, v, state.archId, state.coins, state.leagueIdx, cap));
-      btn.textContent = n > 0 ? `+${n}` : 'Max';
-      btn.disabled = n === 0;
+    // Plan the purchase, including Cap Breakers for points beyond the cap
+    const plan = E.planUpgrade(state, r.id, ui.buy === 'max' ? 9999 : ui.buy);
+    if (plan.n === 0) {
+      if (v >= cap) {
+        costEl.textContent = `Cap ${cap}`;
+        costEl.title = 'Capped. Each point above the cap costs a Cap Breaker plus its coin price.';
+        btn.textContent = state.capBreakers > 0 ? '+1 ◆' : 'Capped';
+        btn.disabled = state.capBreakers < 1 || state.coins < E.pointCost(r.id, v, state.archId, state.leagueIdx);
+      } else {
+        costEl.textContent = `${fmt(E.pointCost(r.id, v, state.archId, state.leagueIdx))}`;
+        btn.textContent = ui.buy === 'max' ? 'Max' : '+0';
+        btn.disabled = true;
+      }
     } else {
-      ({ bought: n, total } = E.buyCost(r.id, v, state.archId, ui.buy, state.leagueIdx, cap));
-      btn.textContent = `+${n}`;
-      btn.disabled = total > state.coins;
+      btn.textContent = plan.breakers > 0 ? `+${plan.n} ◆${plan.breakers}` : `+${plan.n}`;
+      btn.disabled = false;
+      costEl.textContent = `${fmt(plan.total)}`;
+      costEl.title = plan.breakers > 0 ? `Uses ${plan.breakers} Cap Breaker${plan.breakers > 1 ? 's' : ''} (◆)` : `Next point: ${fmt(E.pointCost(r.id, v, state.archId, state.leagueIdx))} coins`;
     }
-    costEl.textContent = `${fmt(total || E.pointCost(r.id, v, state.archId, state.leagueIdx))}`;
-    costEl.title = `Next point: ${fmt(E.pointCost(r.id, v, state.archId, state.leagueIdx))} coins`;
   }
   document.querySelectorAll('#buySeg button').forEach((b) => b.classList.toggle('on', String(ui.buy) === b.dataset.buy));
 }
@@ -292,6 +286,8 @@ function buildSpeedSeg() {
 function renderAll() {
   if (!state) return;
   renderInvest();
+  renderDaily();
+  renderClutch();
   const ovr = E.overallOf(state);
   const league = LEAGUES[state.leagueIdx];
   const contract = E.contractFor(ovr);
@@ -308,6 +304,13 @@ function renderAll() {
   $('#hRecord').textContent = `${s.w}-${s.l}`;
   $('#hCoins').textContent = fmt(state.coins);
   $('#hBreakers').textContent = state.capBreakers;
+  $('#careerInfo').innerHTML = `
+    <div><span>Name</span><b>${state.name}</b></div>
+    <div><span>Position</span><b>${state.pos} · ${E.ARCH_BY_ID[state.archId].name}</b></div>
+    <div><span>League</span><b>${LEAGUES[state.leagueIdx].name}</b></div>
+    <div><span>Ascensions</span><b>${state.ascensions}</b></div>
+    <div><span>Legacy bonus</span><b>+${Math.round(LEGACY_EARN_BONUS * state.ascensions * 100)}% pay</b></div>
+    <div><span>Build</span><b>${fmtHeight(state.body.height)}, ${state.body.weight} lb</b></div>`;
   $('#hRate').textContent = `~${fmt(perGame)} / game`;
 
   const ovrEl = $('#ovr');
@@ -458,6 +461,7 @@ const escapeHtml = (s) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&l
 function finishGame(instant) {
   const { res } = ui.game;
   const earn = E.applyGame(state, res, isAway() ? AWAY_EARN_MULT : 1);
+  if (!isAway()) announceDaily(E.recordDaily(state, 'game', res));
   const b = res.box;
   const s = state.seasonStats;
   const wl = res.won ? '<span class="win">WIN</span>' : '<span class="loss">LOSS</span>';
@@ -476,6 +480,7 @@ function finishGame(instant) {
     </div>`;
   if (!instant) pushEvent({ q: 0, clock: '', cls: 'sys', text: `Game over. You had ${b.pts} points, ${b.orb + b.drb} rebounds and ${b.ast} assists. Earned ${fmt(earn)} coins.` });
   ui.game = null;
+  renderClutch();
 
   if (s.gp >= SEASON_GAMES) endSeason();
   save();
@@ -506,6 +511,10 @@ async function mainLoop() {
     const perEvent = GAME_MS / sp / g.events.length;
     const ev = g.events[g.i++];
     pushEvent(ev);
+    if (ev.q === 4 && !g.clutchChecked) {
+      g.clutchChecked = true;
+      if (Math.abs(ev.own - ev.opp) <= CLUTCH.closeMargin) { g.clutchOpen = true; renderClutch(); }
+    }
     if (g.i >= g.events.length) {
       finishGame(false);
       renderAll();
@@ -561,6 +570,7 @@ function finishDrill(forcedQuality, forcedMsg) {
   state.career.training += coins;
   state.career.coinsEarned += coins;
   ui.trainCdUntil = Date.now() + E.trainingCooldownSec(state) * 1000;
+  announceDaily(E.recordDaily(state, 'drill'));
   $('#trainResult').innerHTML = `${label} <span class="gain">+${fmt(coins)}</span>`;
   save();
   renderAll();
@@ -613,6 +623,7 @@ function acceptAd() {
   $('#adBox').innerHTML = `<span class="gain">Deal signed!</span> +${fmt(reward)} coins from ${ui.ad.sponsor}.`;
   ui.ad = null;
   ui.nextAdAt = Date.now() + E.adGapSec(state) * 1000;
+  announceDaily(E.recordDaily(state, 'ad'));
   save();
   renderAll();
 }
@@ -672,6 +683,8 @@ function init() {
   $('#pauseBtn').onclick = () => { ui.paused = !ui.paused; renderAll(); };
   $('#ascendBtn').onclick = ascendPrompt;
   bindInvest();
+  $('#clutchBtn').onclick = claimClutch;
+  document.querySelectorAll('#game .tabbtn').forEach((b) => { b.onclick = () => showTab(b.dataset.tab); });
   $('#menuBtn').onclick = menuPrompt;
   $('#buySeg').addEventListener('click', (e) => {
     const b = e.target.closest('button'); if (!b) return;
@@ -734,7 +747,71 @@ function bindInvest() {
   $('#investBox').onclick = (e) => {
     const b = e.target.closest('button[data-inv]');
     if (!b || !state) return;
-    if (E.buyInvest(state, b.dataset.inv)) { toast(`${b.dataset.inv === 'agency' ? 'Agency' : 'Trainer'} upgraded`, true); save(); }
+    const kind = b.dataset.inv;
+    const now = Date.now();
+    const divOld = kind === 'agency' ? E.agencyDivisor(state) : E.trainerDivisor(state);
+    if (E.buyInvest(state, kind)) {
+      // Rescale the timer already running so the upgrade applies right away
+      const divNew = kind === 'agency' ? E.agencyDivisor(state) : E.trainerDivisor(state);
+      const ratio = divOld / divNew;
+      if (kind === 'agency' && ui.nextAdAt > now) ui.nextAdAt = now + (ui.nextAdAt - now) * ratio;
+      if (kind === 'trainer' && ui.trainCdUntil > now) ui.trainCdUntil = now + (ui.trainCdUntil - now) * ratio;
+      toast(`${kind === 'agency' ? 'Agency' : 'Trainer'} upgraded`, true);
+      save();
+    }
     renderAll();
   };
+}
+
+// ================= BOTTOM TABS =================
+function showTab(name) {
+  document.querySelectorAll('#game .tabpanel').forEach((p) => p.classList.toggle('on', p.dataset.panel === name));
+  document.querySelectorAll('#game .tabbtn').forEach((b) => b.classList.toggle('on', b.dataset.tab === name));
+}
+
+// ================= CLUTCH TIME =================
+function renderClutch() {
+  const g = ui.game;
+  const open = !!(state && g && g.clutchOpen && !g.clutchClaimed);
+  $('#clutchBar').classList.toggle('hidden', !open);
+  if (open) $('#clutchText').textContent = `CLUTCH TIME: close game in Q4. Claim +${fmt(E.clutchReward(state))} coins`;
+}
+
+function claimClutch() {
+  const g = ui.game;
+  if (!state || !g || !g.clutchOpen || g.clutchClaimed) return;
+  const pay = E.clutchReward(state);
+  g.clutchClaimed = true;
+  state.coins += pay;
+  state.career.coinsEarned += pay;
+  state.career.clutch = (state.career.clutch || 0) + 1;
+  pushEvent({ q: 0, clock: '', cls: 'sys', text: `Clutch call: you took over and earned ${fmt(pay)} bonus coins.` });
+  toast(`Clutch! +${fmt(pay)} coins`, true);
+  renderClutch();
+  save();
+  renderAll();
+}
+
+// ================= DAILY OBJECTIVES =================
+function announceDaily(unlocked) {
+  if (!unlocked || !unlocked.length) return;
+  if (unlocked.length <= 2) {
+    for (const u of unlocked) toast(`Objective complete: ${u.label} +${fmt(u.pay)}`, true);
+  } else {
+    const sum = unlocked.reduce((t, u) => t + u.pay, 0);
+    toast(`${unlocked.length} objectives complete +${fmt(sum)}`, true);
+  }
+  save();
+}
+
+function renderDaily() {
+  const d = E.ensureDaily(state);
+  const rows = E.dailyObjectives(state).map((o) =>
+    `<div class="obj"><span class="chk">${o.done}x</span><span class="otxt">Next: ${o.label}</span></div>`
+  ).join('');
+  const next = E.dailyPayout(state, d.total);
+  $('#dailyBox').innerHTML = `${rows}<div class="muted small" style="margin-top:6px">Each new achievement pays ${fmt(Math.round(next))} coins and rises a little.</div>`;
+  const ms = new Date(new Date().setHours(24, 0, 0, 0)) - Date.now();
+  const hrs = Math.floor(ms / 3600000), mins = Math.floor((ms % 3600000) / 60000);
+  $('#dailyLeft').textContent = `resets in ${hrs}h ${mins}m`;
 }

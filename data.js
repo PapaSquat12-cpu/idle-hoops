@@ -35,7 +35,6 @@ export const BODY = {
   ],
 };
 export const NON_BOOST_CAP = 80;      // ratings the archetype doesn't boost stop at this until you earn Cap Breakers
-export const CAP_BREAK_STEP = 5;      // each Cap Breaker raises one rating's cap by this much
 export const CAP_BREAK_GS36 = 25;     // a game this strong (Game Score per 36) earns a Cap Breaker
 export const BASE_RATING = 45;      // every rating starts here before archetype boosts
 export const START_CAP = 85;        // archetype starting ratings never exceed this
@@ -206,6 +205,18 @@ export const INVEST = {
   costExp: 2,                                                  // level n+1 costs gamesBase x typical game pay x (n+1)^2
   agency:  { gamesBase: 15, payMult: 0.35, speed: 0.06 },     // ads: +35% pay per level; gap between offers divided by (1 + 0.06 x level)
   trainer: { gamesBase: 12, payMult: 0.30, speed: 0.06 },     // drills: +30% pay per level; cooldown divided by (1 + 0.06 x level)
+};
+
+// Clutch time: in a close game entering Q4, one bonus per game. Scales with contract base and the Clutch rating.
+export const CLUTCH = { rate: 0.4, closeMargin: 6 };
+
+// Daily objectives reset at local midnight. Each category is an uncapped ladder (1st, 2nd, 3rd... each day).
+// Payout = contract base x rate x (1 + step x objectives completed today).
+// Not affected by investments.
+export const DAILY = {
+  rate: 0.4,
+  step: 0.1,
+  statTargets: { tpm: 4, ast: 8, reb: 10, stopped: 4, pts: 25 },
 };
 
 export const AWAY_EARN_MULT = 0.5;    // games played while away (tab hidden, idle, or offline) pay half

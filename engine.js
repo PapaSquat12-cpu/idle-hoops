@@ -4,8 +4,8 @@
 import {
   MAX_RATING, BASE_RATING, START_CAP, SEASON_GAMES, COST, RATINGS, POSITIONS, ARCHETYPES,
   LEAGUES, CONTRACTS, LEGACY_RATING_BONUS, LEGACY_EARN_BONUS, TRAINING, ADS, CATEGORIES,
-  NON_BOOST_CAP, CAP_BREAK_STEP, CAP_BREAK_GS36, BODY,
-  coreWeights, INVEST, SIDE_RATE,
+  NON_BOOST_CAP, CAP_BREAK_GS36, BODY,
+  coreWeights, INVEST, SIDE_RATE, CLUTCH, DAILY,
 } from './data.js';
 import { computeOverall, gaussian, clamp } from './sim.js';
 
@@ -209,16 +209,24 @@ export function buyInvest(state, kind) {
   return true;
 }
 
+// Timing divisors: gaps and cooldowns are divided by these
+export function agencyDivisor(state) {
+  return 1 + INVEST.agency.speed * investLevel(state, 'agency');
+}
+export function trainerDivisor(state) {
+  return 1 + INVEST.trainer.speed * investLevel(state, 'trainer');
+}
+
 // Seconds until the next sponsor offer. Agency levels divide the gap by (1 + speed * level).
 export function adGapSec(state) {
-  const div = 1 + INVEST.agency.speed * investLevel(state, 'agency');
+  const div = agencyDivisor(state);
   const lo = ADS.minGapSec / div, hi = ADS.maxGapSec / div;
   return lo + Math.random() * (hi - lo);
 }
 
 // Drill cooldown in seconds. Trainer levels divide it by (1 + speed * level).
 export function trainingCooldownSec(state) {
-  return TRAINING.cooldownSec / (1 + INVEST.trainer.speed * investLevel(state, 'trainer'));
+  return TRAINING.cooldownSec / trainerDivisor(state);
 }
 
 function contractBase(state) {
@@ -267,35 +275,40 @@ export function overallOf(state) {
 }
 
 // ---------- Upgrades & cap breakers ----------
-// Buy points on a rating (up to its cap). Returns number of points bought.
-export function upgrade(state, ratingId, amount) {
-  const cur = state.ratings[ratingId];
-  const cap = ratingCap(state, ratingId);
-  if (cur >= cap) return 0;
-  const want = Math.min(amount, cap - cur);
-  const { total, bought } = buyCost(ratingId, cur, state.archId, want, state.leagueIdx, cap);
-  if (bought === 0 || total > state.coins) {
-    const m = maxAffordable(ratingId, cur, state.archId, state.coins, state.leagueIdx, cap);
-    if (m.n === 0) return 0;
-    state.coins -= m.total;
-    state.career.coinsSpent += m.total;
-    state.ratings[ratingId] = cur + m.n;
-    return m.n;
+// Plan a purchase of up to `amount` points without changing state.
+// Points below the cap cost coins. Each point above the cap also costs one Cap Breaker,
+// and that breaker raises the cap by 1.
+export function planUpgrade(state, ratingId, amount) {
+  let cur = state.ratings[ratingId];
+  let cap = ratingCap(state, ratingId);
+  let coins = state.coins, breakers = state.capBreakers;
+  let n = 0, total = 0, used = 0;
+  while (n < amount && cur < MAX_RATING) {
+    const cost = pointCost(ratingId, cur, state.archId, state.leagueIdx);
+    if (cur < cap) {
+      if (coins < cost) break;
+    } else {
+      if (breakers < 1 || coins < cost) break;
+      breakers -= 1; used += 1;
+      cap = cur + 1;
+    }
+    coins -= cost; total += cost; cur += 1; n += 1;
   }
-  state.coins -= total;
-  state.career.coinsSpent += total;
-  state.ratings[ratingId] = cur + bought;
-  return bought;
+  return { n, total, breakers: used };
 }
 
-// Spend one Cap Breaker to raise a capped rating's cap. Returns true if it worked.
-export function breakCap(state, ratingId) {
-  if (state.capBreakers < 1) return false;
-  if (state.ratings[ratingId] < ratingCap(state, ratingId)) return false;   // only when the rating is at its cap
-  if (ratingCap(state, ratingId) >= MAX_RATING) return false;
-  state.capBonus[ratingId] = (state.capBonus[ratingId] || 0) + CAP_BREAK_STEP;
-  state.capBreakers -= 1;
-  return true;
+// Buy up to `amount` points on a rating. Returns number of points bought.
+export function upgrade(state, ratingId, amount) {
+  const p = planUpgrade(state, ratingId, amount);
+  if (p.n === 0) return 0;
+  state.coins -= p.total;
+  state.career.coinsSpent += p.total;
+  state.capBreakers -= p.breakers;
+  state.capBonus = state.capBonus || {};
+  state.capBonus[ratingId] = (state.capBonus[ratingId] || 0) + p.breakers;
+  state.ratings[ratingId] += p.n;
+  if (p.n > 0) recordDaily(state, 'upgrade', p.n);
+  return p.n;
 }
 
 export function awardCapBreaker(state) {
@@ -372,6 +385,109 @@ export function finishSeason(state) {
   state.season += 1;
   state.seasonStats = emptySeason();
   return state.lastSeason;
+}
+
+// ---------- Clutch time ----------
+export function clutchReward(state) {
+  const league = LEAGUES[state.leagueIdx];
+  const clutch = state.ratings.clutch || 0;
+  return Math.round(contractBase(state) * CLUTCH.rate * league.coinMult * (0.5 + clutch / 100) * legacyEarnMult(state.ascensions));
+}
+
+// ---------- Daily objectives (reset at local midnight) ----------
+// Each category is an uncapped ladder: 1st, 2nd, 3rd... achievement each day, one-time each.
+export const DAILY_CATS = ['ads', 'drills', 'games', 'upgrades', 'stat'];
+
+export function dayKey(d = new Date()) {
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+}
+
+// Stat line chosen from the archetype's strongest boosted rating
+export function statObjective(archId) {
+  const top = Object.entries(ARCH_BY_ID[archId].boosts).sort((x, y) => y[1] - x[1])[0][0];
+  const map = {
+    three: 'tpm', ft: 'tpm',
+    handle: 'ast', pass: 'ast', vision: 'ast',
+    orb: 'reb', drb: 'reb',
+    block: 'stopped', steal: 'stopped', intD: 'stopped', perD: 'stopped',
+  };
+  const stat = map[top] || 'pts';
+  const t = DAILY.statTargets[stat];
+  const descs = {
+    tpm: `make ${t} three-pointers in one game`,
+    ast: `record ${t} assists in one game`,
+    reb: `grab ${t} rebounds in one game`,
+    stopped: `record ${t} steals + blocks in one game`,
+    pts: `score ${t} points in one game`,
+  };
+  return { stat, target: t, desc: descs[stat] };
+}
+
+function plural(n, word) { return `${n} ${word}${n === 1 ? '' : 's'}`; }
+
+// Label for the n-th achievement in a category today
+export function tierLabel(state, cat, n) {
+  switch (cat) {
+    case 'ads': return `Accept ${plural(n, 'sponsor offer')}`;
+    case 'drills': return `Finish ${plural(n, 'training drill')}`;
+    case 'games': return `Play ${plural(n, 'live game')}`;
+    case 'upgrades': return `Buy ${plural(n, 'rating point')}`;
+    case 'stat': return `Stat line, ${statObjective(state.archId).desc} (${plural(n, 'time')} today)`;
+  }
+  return cat;
+}
+
+export function ensureDaily(state) {
+  const key = dayKey();
+  if (!state.daily || state.daily.day !== key || state.daily.v !== 2) {
+    state.daily = { v: 2, day: key, done: { ads: 0, drills: 0, games: 0, upgrades: 0, stat: 0 }, total: 0 };
+  }
+  return state.daily;
+}
+
+// Next achievement per category: { id, label, done, next }
+export function dailyObjectives(state) {
+  const d = ensureDaily(state);
+  return DAILY_CATS.map((cat) => ({
+    id: cat,
+    done: d.done[cat],
+    next: d.done[cat] + 1,
+    label: tierLabel(state, cat, d.done[cat] + 1),
+  }));
+}
+
+// Payout for the next achievement: rises slightly with each achievement already made today
+export function dailyPayout(state, completedToday) {
+  const league = LEAGUES[state.leagueIdx];
+  return contractBase(state) * DAILY.rate * league.coinMult * legacyEarnMult(state.ascensions) * (1 + DAILY.step * completedToday);
+}
+
+// Record active play. event: 'ad' | 'drill' | 'upgrade' (value = points) | 'game' (value = game result).
+// Returns the achievements unlocked by this event: [{ id, tier, pay, label }].
+export function recordDaily(state, event, value = 1) {
+  const d = ensureDaily(state);
+  const unlocked = [];
+  const add = (cat, amount) => {
+    for (let i = 0; i < amount; i++) {
+      d.done[cat] += 1;
+      const pay = Math.round(dailyPayout(state, d.total));
+      d.total += 1;
+      state.coins += pay;
+      state.career.coinsEarned += pay;
+      unlocked.push({ id: cat, tier: d.done[cat], pay, label: tierLabel(state, cat, d.done[cat]) });
+    }
+  };
+  if (event === 'ad') add('ads', 1);
+  else if (event === 'drill') add('drills', 1);
+  else if (event === 'upgrade') add('upgrades', value);
+  else if (event === 'game') {
+    add('games', 1);
+    const so = statObjective(state.archId);
+    const b = value.box;
+    const metric = { tpm: b.tpm, ast: b.ast, reb: b.orb + b.drb, stopped: b.stl + b.blk, pts: b.pts }[so.stat];
+    if (metric >= so.target) add('stat', 1);
+  }
+  return unlocked;
 }
 
 export function serialize(state) { return JSON.stringify(state); }

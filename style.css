@@ -265,3 +265,74 @@ input { font-size: 16px; }                          /* stops iOS zooming into th
 .inv-row:last-child { border-bottom: none; }
 .inv-text { flex: 1; }
 .inv-row button { white-space: nowrap; }
+
+/* ===================== GAME SCREEN: BOTTOM TABS (each tab fits one screen) ===================== */
+#game { display: flex; flex-direction: column; height: 100vh; height: 100dvh; overflow: hidden; }
+#game.hidden { display: none !important; }
+#game .gtop { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex-shrink: 0;
+  background: var(--panel); border-bottom: 1px solid var(--line); padding: 8px 10px; }
+#game .gident { flex: 1; min-width: 0; }
+#game .gident .pname { font-size: 1rem; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#game .gident .psub { font-size: .75rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#game .gtop .hstat.coins { flex-shrink: 0; }
+#game .gctrl { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+#game .gctrl button { padding: 5px 9px; font-size: .8rem; }
+
+#game .tabs { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+#game .tabpanel { display: none; flex: 1; min-height: 0; flex-direction: column; gap: 8px; padding: 8px 10px; overflow: hidden; }
+#game .tabpanel.on { display: flex; }
+#game .tabpanel > .card { margin: 0; padding: 10px 12px; }
+#game .tabpanel > .card.grow { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+#game .info4 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+#game .info4 .hstat { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+
+/* Play-by-play fills its tab; the log scrolls inside its own box only */
+#game .feedwrap #feed { flex: 1; min-height: 0; height: auto; font-size: .85rem; line-height: 1.35; }
+#game .lastgame { margin: 0; }
+#game .scoreboard { margin: 0; }
+
+/* Ratings tab: overall card on top, ratings in two columns */
+#game .player.compact { display: flex; align-items: center; gap: 12px; text-align: left; flex-shrink: 0; }
+#game .player.compact .ovr-wrap { width: 84px; height: 84px; flex-shrink: 0; }
+#game .player.compact .ovr { font-size: 2.2rem; }
+#game .player.compact .meta { flex: 1; min-width: 0; margin: 0; gap: 3px; }
+#game .player.compact .meta div { font-size: .78rem; padding-bottom: 2px; }
+#game .player.compact .ready { display: none; }
+#game .ratings #ratingList { display: block; columns: 2; column-gap: 12px; overflow: hidden; }
+#game .ratings .catlbl { display: block; break-after: avoid; margin: 6px 0 2px; font-size: .66rem; }
+#game .rrow { display: grid; grid-template-columns: 1fr 44px 66px; grid-template-areas: "name name val" "bar cost btn";
+  gap: 1px 6px; align-items: center; padding: 3px 4px; break-inside: avoid; }
+#game .rrow .rtop { display: contents; }
+#game .rrow .rname { grid-area: name; font-size: .8rem; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#game .rrow .rname small { display: none; }
+#game .rrow .val { grid-area: val; font-size: .9rem; }
+#game .rrow .bar { grid-area: bar; margin-top: 0; height: 5px; }
+#game .rrow .cost { grid-area: cost; font-size: .66rem; }
+#game .rrow button { grid-area: btn; min-width: 0; padding: 3px 4px; font-size: .75rem; }
+#game .ratings .cardhead { margin-bottom: 4px; }
+#game .ratings .seg button { padding: 2px 6px; font-size: .7rem; }
+
+/* Season and career tabs */
+#game .statgrid { grid-template-columns: 1fr 1fr 1fr; gap: 5px; }
+#game .statgrid div { padding: 5px 6px; }
+#game .statgrid b { font-size: .95rem; }
+#game #ladder { overflow: hidden; }
+#game #ladder .lad { font-size: .8rem; padding: 3px 6px; }
+#game .career-info .stat-row, #game .career-info > div { display: flex; justify-content: space-between; font-size: .88rem; border-bottom: 1px dashed var(--line); padding: 5px 0; }
+#game .career-info span { color: var(--muted); }
+
+/* Bottom tab bar */
+#game .tabbar { display: grid; grid-template-columns: repeat(5, 1fr); flex-shrink: 0; background: var(--panel);
+  border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
+#game .tabbtn { background: none; border: none; border-radius: 0; padding: 10px 2px 12px; font-size: .78rem; color: var(--muted); }
+#game .tabbtn.on { color: var(--gold); font-weight: 800; box-shadow: inset 0 3px 0 var(--gold); }
+#game .tabbtn:hover { background: var(--panel2); }
+
+/* Clutch banner (sits above the bottom tabs, visible on every tab) */
+#game .clutch { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-shrink: 0;
+  background: rgba(255,194,51,.14); border-top: 1px solid var(--gold); padding: 8px 12px; font-weight: 800; font-size: .85rem; color: var(--gold); }
+#game .clutch.hidden { display: none !important; }
+#game .clutch button { padding: 6px 12px; }
+/* Daily objectives */
+#game .obj { display: grid; grid-template-columns: 34px 1fr; gap: 6px; align-items: center; font-size: .82rem; padding: 4px 0; border-bottom: 1px dashed var(--line); }
+#game .obj .chk { color: var(--gold); font-weight: 800; font-variant-numeric: tabular-nums; }

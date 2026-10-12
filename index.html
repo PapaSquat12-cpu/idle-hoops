@@ -43,19 +43,15 @@
     </footer>
   </section>
 
-  <!-- ===================== GAME SCREEN ===================== -->
+  <!-- ===================== GAME SCREEN (5 tabs, each fits one screen) ===================== -->
   <section id="game" class="screen hidden">
-    <header class="topbar">
-      <div class="ident">
+    <header class="gtop">
+      <div class="gident">
         <div class="pname" id="hName">-</div>
         <div class="psub" id="hSub">-</div>
       </div>
-      <div class="hstat"><span>League</span><b id="hLeague">-</b></div>
-      <div class="hstat"><span>Season</span><b id="hSeason">-</b></div>
-      <div class="hstat"><span>Record</span><b id="hRecord">-</b></div>
       <div class="hstat coins"><span>Coins</span><b id="hCoins">0</b><small id="hRate"></small></div>
-      <div class="hstat"><span>Cap Breakers</span><b id="hBreakers">0</b></div>
-      <div class="controls">
+      <div class="gctrl">
         <div class="seg" id="speedSeg"></div>
         <button id="pauseBtn">Pause</button>
         <span id="paceBadge" class="pace watch">Watching</span>
@@ -64,10 +60,37 @@
       </div>
     </header>
 
-    <main class="grid">
-      <!-- LEFT: player + ratings -->
-      <aside class="col">
-        <div class="card player">
+    <main class="tabs">
+      <!-- TAB 1: name & info, score, play-by-play, last game -->
+      <section class="tabpanel on" data-panel="game">
+        <div class="card info4">
+          <div class="hstat"><span>League</span><b id="hLeague">-</b></div>
+          <div class="hstat"><span>Season</span><b id="hSeason">-</b></div>
+          <div class="hstat"><span>Record</span><b id="hRecord">-</b></div>
+          <div class="hstat"><span>Cap Breakers</span><b id="hBreakers">0</b></div>
+        </div>
+        <div class="card scoreboard">
+          <div class="team you"><span id="sbYouName">YOU</span><b id="sbYou">0</b></div>
+          <div class="clock">
+            <div id="sbQ">Q1</div>
+            <div id="sbClock">12:00</div>
+            <div id="sbStatus" class="status">Tip-off</div>
+          </div>
+          <div class="team opp"><b id="sbOpp">0</b><span id="sbOppName">OPP</span></div>
+        </div>
+        <div class="card feedwrap grow">
+          <div class="cardhead">Play-by-Play <small id="gameLabel"></small></div>
+          <div id="feed"></div>
+        </div>
+        <div class="card lastgame" id="lastGame">
+          <div class="cardhead">Last Game</div>
+          <div class="muted">No games yet. Your first tip-off is coming up.</div>
+        </div>
+      </section>
+
+      <!-- TAB 2: overall & info, individual ratings -->
+      <section class="tabpanel" data-panel="ratings">
+        <div class="card player compact">
           <div class="ovr-wrap">
             <div class="ovr" id="ovr">--</div>
             <div class="ovr-lbl">OVERALL</div>
@@ -80,13 +103,12 @@
             <div><span>Legacy</span><b id="legacy">-</b></div>
           </div>
           <div class="ready">
-            <div class="cardhead small">Ascension Requirements</div>
             <div class="req" id="reqOvr"></div>
             <div class="req" id="reqMvp"></div>
           </div>
         </div>
 
-        <div class="card ratings">
+        <div class="card ratings grow">
           <div class="cardhead">
             Ratings
             <div class="seg small" id="buySeg">
@@ -98,34 +120,17 @@
           </div>
           <div id="ratingList"></div>
         </div>
-      </aside>
-
-      <!-- CENTER: game -->
-      <section class="col wide">
-        <div class="card scoreboard">
-          <div class="team you"><span id="sbYouName">YOU</span><b id="sbYou">0</b></div>
-          <div class="clock">
-            <div id="sbQ">Q1</div>
-            <div id="sbClock">12:00</div>
-            <div id="sbStatus" class="status">Tip-off</div>
-          </div>
-          <div class="team opp"><b id="sbOpp">0</b><span id="sbOppName">OPP</span></div>
-        </div>
-        <div class="card feedwrap">
-          <div class="cardhead">Play-by-Play <small id="gameLabel"></small></div>
-          <div id="feed"></div>
-        </div>
-        <div class="card lastgame" id="lastGame">
-          <div class="cardhead">Last Game</div>
-          <div class="muted">No games yet. Your first tip-off is coming up.</div>
-        </div>
       </section>
 
-      <!-- RIGHT: side income + stats -->
-      <aside class="col">
+      <!-- TAB 3: engagement items -->
+      <section class="tabpanel" data-panel="engage">
+        <div id="clutchBar" class="clutch hidden">
+          <span id="clutchText">CLUTCH TIME</span>
+          <button id="clutchBtn" class="gold">Claim</button>
+        </div>
         <div class="card training">
           <div class="cardhead">Training Drill <small id="trainCd"></small></div>
-          <p class="muted small">Stop the marker in the green zone. Better timing pays more. Scales with your Overall and ratings.</p>
+          <p class="muted small">Stop the marker in the green zone. Better timing pays more.</p>
           <div class="drill" id="drill"><div class="zone"></div><div class="marker" id="marker"></div></div>
           <div class="drillrow">
             <button id="trainBtn" class="gold">Start Drill</button>
@@ -144,6 +149,14 @@
         </div>
 
         <div class="card">
+          <div class="cardhead">Daily Objectives <small id="dailyLeft"></small></div>
+          <div id="dailyBox"></div>
+        </div>
+      </section>
+
+      <!-- TAB 4: season stats & contract ladder -->
+      <section class="tabpanel" data-panel="season">
+        <div class="card">
           <div class="cardhead">Season Stats</div>
           <div class="statgrid" id="seasonGrid"></div>
           <div class="benchmark">
@@ -153,17 +166,33 @@
           <div class="muted small" id="lastSeason"></div>
         </div>
 
-        <div class="card">
+        <div class="card grow">
           <div class="cardhead">Contract Ladder</div>
           <div id="ladder"></div>
         </div>
+      </section>
 
+      <!-- TAB 5: career stats & info -->
+      <section class="tabpanel" data-panel="career">
         <div class="card">
-          <div class="cardhead">Career</div>
+          <div class="cardhead">Career Info</div>
+          <div id="careerInfo" class="career-info"></div>
+        </div>
+
+        <div class="card grow">
+          <div class="cardhead">Career Stats</div>
           <div class="statgrid" id="careerGrid"></div>
         </div>
-      </aside>
+      </section>
     </main>
+
+    <nav class="tabbar">
+      <button class="tabbtn on" data-tab="game">Game</button>
+      <button class="tabbtn" data-tab="ratings">Ratings</button>
+      <button class="tabbtn" data-tab="engage">Engage</button>
+      <button class="tabbtn" data-tab="season">Season</button>
+      <button class="tabbtn" data-tab="career">Career</button>
+    </nav>
   </section>
 
   <div id="toast" class="toast hidden"></div>
