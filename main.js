@@ -16,6 +16,9 @@ const IDLE_MS = 90000;          // no interaction for this long = away
 
 const $ = (s) => document.querySelector(s);
 const RATING_NAME = Object.fromEntries(RATINGS.map((r) => [r.id, r.name]));
+// Only touch the DOM when the markup changed, so buttons aren't replaced under a tap
+const htmlCache = new WeakMap();
+function setHTML(el, html) { if (htmlCache.get(el) !== html) { el.innerHTML = html; htmlCache.set(el, html); } }
 const h = (tag, cls, html) => { const n = document.createElement(tag); if (cls) n.className = cls; if (html != null) n.innerHTML = html; return n; };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -319,7 +322,6 @@ function renderAll() {
   $('#contractName').textContent = contract.name;
   $('#minTarget').textContent = `${f1(minutes)} min`;
   $('#nextContract').textContent = next ? `${next.name} at ${next.minOvr} OVR` : 'Top contract reached';
-  $('#estGame').textContent = `${fmt(perGame)}`;
   $('#legacy').textContent = state.ascensions ? `+${state.ascensions * LEGACY_RATING_BONUS} rating, +${Math.round(state.ascensions * LEGACY_EARN_BONUS * 100)}% pay` : 'None yet';
 
   const ovrOk = ovr >= 99, mvpOk = state.mvpThisLeague >= 1;
@@ -545,7 +547,14 @@ function startDrill() {
     ui.trainRaf = requestAnimationFrame(tick);
   };
   ui.trainRaf = requestAnimationFrame(tick);
-  $('#trainBtn').onclick = () => finishDrill(null);
+  $('#trainBtn').onclick = () => {
+    if (ui.trainRaf) {
+      const t = ((performance.now() - ui.trainStart) / 1000) * 1.25;
+      const ph = t % 2;
+      ui.trainPos = ph <= 1 ? ph : 2 - ph;
+    }
+    finishDrill(null);
+  };
 }
 
 function finishDrill(forcedQuality, forcedMsg) {
@@ -684,6 +693,7 @@ function init() {
   $('#ascendBtn').onclick = ascendPrompt;
   bindInvest();
   $('#clutchBtn').onclick = claimClutch;
+  bindDaily();
   document.querySelectorAll('#game .tabbtn').forEach((b) => { b.onclick = () => showTab(b.dataset.tab); });
   $('#menuBtn').onclick = menuPrompt;
   $('#buySeg').addEventListener('click', (e) => {
@@ -738,9 +748,9 @@ function renderInvest() {
         <button data-inv="${kind}" class="${can ? 'gold' : ''}">Upgrade ${fmt(cost)}</button>
       </div>`;
   };
-  el.innerHTML = `
-    ${row('agency', 'Agency', (l) => `Ad pay +${Math.round(INVEST.agency.payMult * l * 100)}%. Offers come ${Math.round(INVEST.agency.speed * l * 100)}% more often.`)}
-    ${row('trainer', 'Trainer', (l) => `Drill pay +${Math.round(INVEST.trainer.payMult * l * 100)}%. Drills recharge ${Math.round(INVEST.trainer.speed * l * 100)}% faster.`)}`;
+  setHTML(el, `
+    ${row('agency', 'Agency', (l) => `+${Math.round(INVEST.agency.payMult * l * 100)}% ad pay · +${Math.round(INVEST.agency.speed * l * 100)}% offers`)}
+    ${row('trainer', 'Trainer', (l) => `+${Math.round(INVEST.trainer.payMult * l * 100)}% drill pay · +${Math.round(INVEST.trainer.speed * l * 100)}% speed`)}`);
 }
 
 function bindInvest() {
@@ -774,7 +784,7 @@ function renderClutch() {
   const g = ui.game;
   const open = !!(state && g && g.clutchOpen && !g.clutchClaimed);
   $('#clutchBar').classList.toggle('hidden', !open);
-  if (open) $('#clutchText').textContent = `CLUTCH TIME: close game in Q4. Claim +${fmt(E.clutchReward(state))} coins`;
+  if (open) $('#clutchText').textContent = `CLUTCH TIME · Claim +${fmt(E.clutchReward(state))}`;
 }
 
 function claimClutch() {
@@ -793,25 +803,35 @@ function claimClutch() {
 }
 
 // ================= DAILY OBJECTIVES =================
-function announceDaily(unlocked) {
-  if (!unlocked || !unlocked.length) return;
-  if (unlocked.length <= 2) {
-    for (const u of unlocked) toast(`Objective complete: ${u.label} +${fmt(u.pay)}`, true);
-  } else {
-    const sum = unlocked.reduce((t, u) => t + u.pay, 0);
-    toast(`${unlocked.length} objectives complete +${fmt(sum)}`, true);
-  }
+function announceDaily(ready) {
+  if (!ready || !ready.length) return;
+  toast(ready.length === 1 ? `Ready to claim: ${ready[0].label}` : `${ready.length} objectives ready to claim`, true);
   save();
 }
 
 function renderDaily() {
   const d = E.ensureDaily(state);
-  const rows = E.dailyObjectives(state).map((o) =>
-    `<div class="obj"><span class="chk">${o.done}x</span><span class="otxt">Next: ${o.label}</span></div>`
-  ).join('');
-  const next = E.dailyPayout(state, d.total);
-  $('#dailyBox').innerHTML = `${rows}<div class="muted small" style="margin-top:6px">Each new achievement pays ${fmt(Math.round(next))} coins and rises a little.</div>`;
+  const rows = E.dailyObjectives(state).map((o) => {
+    const pay = fmt(Math.round(E.dailyPayout(state, d.claimed)));
+    const right = o.ready
+      ? `<button class="gold" data-claim="${o.id}">Claim +${pay}</button>`
+      : `<span class="oprog">${o.progress}/${o.target}</span>`;
+    return `<div class="obj${o.ready ? ' ready' : ''}"><div class="otxt">${o.ready ? 'Done: ' : 'Next: '}${o.label}</div>${right}</div>`;
+  }).join('');
+  setHTML($('#dailyBox'), rows);
   const ms = new Date(new Date().setHours(24, 0, 0, 0)) - Date.now();
   const hrs = Math.floor(ms / 3600000), mins = Math.floor((ms % 3600000) / 60000);
   $('#dailyLeft').textContent = `resets in ${hrs}h ${mins}m`;
+}
+
+function bindDaily() {
+  $('#dailyBox').onclick = (e) => {
+    const b = e.target.closest('button[data-claim]');
+    if (!b || !state) return;
+    const pay = E.claimDaily(state, b.dataset.claim);
+    if (!pay) return;
+    toast(`Objective claimed +${fmt(pay)} coins`, true);
+    save();
+    renderAll();
+  };
 }

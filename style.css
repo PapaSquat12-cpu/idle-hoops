@@ -336,3 +336,35 @@ input { font-size: 16px; }                          /* stops iOS zooming into th
 /* Daily objectives */
 #game .obj { display: grid; grid-template-columns: 34px 1fr; gap: 6px; align-items: center; font-size: .82rem; padding: 4px 0; border-bottom: 1px dashed var(--line); }
 #game .obj .chk { color: var(--gold); font-weight: 800; font-variant-numeric: tabular-nums; }
+
+/* Ratings: full name line, cost beside it, bar/value/button on the second line */
+#game .rrow { grid-template-columns: minmax(0,1fr) 34px 52px; grid-template-areas: "name name val" "bar cost btn"; gap: 2px 4px; padding: 4px 4px; }
+#game .rrow .rname { font-size: .78rem; }
+#game .rrow .cost { grid-area: cost; font-size: .62rem; text-align: right; }
+#game .rrow .rname { min-width: 0; }
+#game .rrow .val { font-size: .85rem; text-align: right; }
+#game .rrow button { min-width: 0; width: 100%; }
+/* Daily objectives: one line each, claim button on the right */
+#game .obj { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: .78rem; padding: 3px 0; border-bottom: 1px dashed var(--line); }
+#game .obj .otxt { min-width: 0; }
+#game .obj.ready .otxt { color: var(--gold); font-weight: 700; }
+#game .obj button { padding: 4px 8px; font-size: .72rem; white-space: nowrap; }
+#game .obj .oprog { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Ratings v3: name gets a full-width line; bar, value, cost and button share the line below */
+#game .rrow { grid-template-columns: minmax(0,1fr) 26px 34px 48px; grid-template-areas: "name name name name" "bar val cost btn"; gap: 2px 4px; padding: 4px; }
+#game .rrow .rname { font-size: .8rem; min-width: 0; }
+#game .rrow .val { font-size: .85rem; text-align: right; }
+#game .rrow .cost { font-size: .62rem; text-align: right; white-space: nowrap; }
+#game .rrow button { padding: 3px 2px; font-size: .72rem; }
+#game .rrow .rname { font-size: .75rem; gap: 3px; }
+#game .rrow .star { font-size: .7rem; }
+
+/* Larger bottom tabs for easier tapping */
+#game .tabbtn { min-height: 58px; padding: 12px 4px; font-size: .92rem; display: flex; align-items: center; justify-content: center; }
+#game .tabbtn.on { font-weight: 800; }
+
+/* Tighter spacing on Engage so the taller tab bar still fits */
+#game .tabpanel[data-panel=engage] { gap: 6px; }
+#game .tabpanel[data-panel=engage] .card { margin-bottom: 0; }
+#game .tabpanel[data-panel=engage] .card { padding: 9px 11px; }

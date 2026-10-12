@@ -395,8 +395,9 @@ export function clutchReward(state) {
 }
 
 // ---------- Daily objectives (reset at local midnight) ----------
-// Each category is an uncapped ladder: 1st, 2nd, 3rd... achievement each day, one-time each.
-export const DAILY_CATS = ['ads', 'drills', 'games', 'upgrades', 'stat'];
+// Each category is an uncapped ladder. Tier n needs n qualifying actions counted since the previous tier was claimed.
+// Reaching a tier makes it "ready". The player must claim it before the next tier starts counting.
+export const DAILY_CATS = ['ads', 'drills', 'upgrades', 'stat'];
 
 export function dayKey(d = new Date()) {
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
@@ -414,80 +415,84 @@ export function statObjective(archId) {
   const stat = map[top] || 'pts';
   const t = DAILY.statTargets[stat];
   const descs = {
-    tpm: `make ${t} three-pointers in one game`,
-    ast: `record ${t} assists in one game`,
-    reb: `grab ${t} rebounds in one game`,
-    stopped: `record ${t} steals + blocks in one game`,
-    pts: `score ${t} points in one game`,
+    tpm: `${t} threes in a game`,
+    ast: `${t} assists in a game`,
+    reb: `${t} rebounds in a game`,
+    stopped: `${t} steals + blocks in a game`,
+    pts: `${t} points in a game`,
   };
   return { stat, target: t, desc: descs[stat] };
 }
 
 function plural(n, word) { return `${n} ${word}${n === 1 ? '' : 's'}`; }
 
-// Label for the n-th achievement in a category today
 export function tierLabel(state, cat, n) {
   switch (cat) {
     case 'ads': return `Accept ${plural(n, 'sponsor offer')}`;
     case 'drills': return `Finish ${plural(n, 'training drill')}`;
-    case 'games': return `Play ${plural(n, 'live game')}`;
     case 'upgrades': return `Buy ${plural(n, 'rating point')}`;
-    case 'stat': return `Stat line, ${statObjective(state.archId).desc} (${plural(n, 'time')} today)`;
+    case 'stat': return `Stat line: ${statObjective(state.archId).desc} (×${n})`;
   }
   return cat;
 }
 
 export function ensureDaily(state) {
   const key = dayKey();
-  if (!state.daily || state.daily.day !== key || state.daily.v !== 2) {
-    state.daily = { v: 2, day: key, done: { ads: 0, drills: 0, games: 0, upgrades: 0, stat: 0 }, total: 0 };
+  if (!state.daily || state.daily.day !== key || state.daily.v !== 3) {
+    const per = () => ({ tier: 1, prog: 0, ready: false });
+    state.daily = { v: 3, day: key, cats: { ads: per(), drills: per(), upgrades: per(), stat: per() }, claimed: 0 };
   }
   return state.daily;
 }
 
-// Next achievement per category: { id, label, done, next }
+// Current objective per category
 export function dailyObjectives(state) {
   const d = ensureDaily(state);
-  return DAILY_CATS.map((cat) => ({
-    id: cat,
-    done: d.done[cat],
-    next: d.done[cat] + 1,
-    label: tierLabel(state, cat, d.done[cat] + 1),
-  }));
+  return DAILY_CATS.map((id) => {
+    const c = d.cats[id];
+    return { id, target: c.tier, progress: c.prog, ready: c.ready, label: tierLabel(state, id, c.tier) };
+  });
 }
 
-// Payout for the next achievement: rises slightly with each achievement already made today
-export function dailyPayout(state, completedToday) {
+// Payout for the next claim: rises slightly with each claim made today
+export function dailyPayout(state, claimedToday) {
   const league = LEAGUES[state.leagueIdx];
-  return contractBase(state) * DAILY.rate * league.coinMult * legacyEarnMult(state.ascensions) * (1 + DAILY.step * completedToday);
+  return contractBase(state) * DAILY.rate * league.coinMult * legacyEarnMult(state.ascensions) * (1 + DAILY.step * claimedToday);
 }
 
-// Record active play. event: 'ad' | 'drill' | 'upgrade' (value = points) | 'game' (value = game result).
-// Returns the achievements unlocked by this event: [{ id, tier, pay, label }].
+// Record active play. Returns the objectives that just became ready to claim: [{ id, label }].
 export function recordDaily(state, event, value = 1) {
   const d = ensureDaily(state);
-  const unlocked = [];
-  const add = (cat, amount) => {
-    for (let i = 0; i < amount; i++) {
-      d.done[cat] += 1;
-      const pay = Math.round(dailyPayout(state, d.total));
-      d.total += 1;
-      state.coins += pay;
-      state.career.coinsEarned += pay;
-      unlocked.push({ id: cat, tier: d.done[cat], pay, label: tierLabel(state, cat, d.done[cat]) });
-    }
+  const ready = [];
+  const add = (id, amount) => {
+    const c = d.cats[id];
+    if (c.ready) return;                       // must claim before the next tier counts
+    c.prog = Math.min(c.tier, c.prog + amount);
+    if (c.prog >= c.tier) { c.ready = true; ready.push({ id, label: tierLabel(state, id, c.tier) }); }
   };
   if (event === 'ad') add('ads', 1);
   else if (event === 'drill') add('drills', 1);
   else if (event === 'upgrade') add('upgrades', value);
   else if (event === 'game') {
-    add('games', 1);
     const so = statObjective(state.archId);
     const b = value.box;
     const metric = { tpm: b.tpm, ast: b.ast, reb: b.orb + b.drb, stopped: b.stl + b.blk, pts: b.pts }[so.stat];
     if (metric >= so.target) add('stat', 1);
   }
-  return unlocked;
+  return ready;
+}
+
+// Claim a ready objective: pays now, then the next tier of that category starts counting
+export function claimDaily(state, id) {
+  const d = ensureDaily(state);
+  const c = d.cats[id];
+  if (!c || !c.ready) return 0;
+  const pay = Math.round(dailyPayout(state, d.claimed));
+  d.claimed += 1;
+  state.coins += pay;
+  state.career.coinsEarned += pay;
+  c.tier += 1; c.prog = 0; c.ready = false;
+  return pay;
 }
 
 export function serialize(state) { return JSON.stringify(state); }
