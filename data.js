@@ -7,7 +7,7 @@ export const SEASON_GAMES = 82;
 export const RATING_TICK = 1;       // each purchase adds this much
 
 // Coin cost of one rating point: COST.base * catMult * leagueMult * growth^(value - offset)
-export const COST = { base: 25, growth: 1.06, offset: 20, leagueExp: 0.85, corePremium: 1.5 };
+export const COST = { base: 25, growth: 1.06, offset: 20, leagueExp: 0.85, corePerWeight: 0.25 };
 
 // Legacy: each ascension adds this to every starting rating and this fraction to earnings
 export const LEGACY_RATING_BONUS = 2;

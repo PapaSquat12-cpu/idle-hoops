@@ -35,7 +35,9 @@ export function pointCost(ratingId, value, archId, leagueIdx = 0) {
   const a = ARCH_BY_ID[archId];
   const mult = a.cost[RATING_BY_ID[ratingId].cat] ?? 1;
   // Ratings that make up Overall for this archetype's position cost more
-  const corePremium = POS_BY_ID[a.pos].core[ratingId] ? COST.corePremium : 1;
+  // Core ratings cost more the heavier they weigh in Overall (weight 3 = 1.75x, weight 1 = 1.25x)
+  const w = POS_BY_ID[a.pos].core[ratingId] || 0;
+  const corePremium = w ? 1 + COST.corePerWeight * w : 1;
   return Math.max(1, Math.ceil(COST.base * mult * corePremium * leagueCostMult(leagueIdx) * Math.pow(COST.growth, value - COST.offset)));
 }
 
