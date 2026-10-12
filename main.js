@@ -1,7 +1,7 @@
 // ===== UI controller, game loop, save/load =====
 import {
   POSITIONS, ARCHETYPES, RATINGS, CATEGORIES, LEAGUES, CONTRACTS, SEASON_GAMES,
-  FIRST_NAMES, LAST_NAMES, AD_SPONSORS, ADS, TRAINING, MAX_RATING, LEGACY_RATING_BONUS, LEGACY_EARN_BONUS, AWAY_EARN_MULT, BODY,
+  FIRST_NAMES, LAST_NAMES, AD_SPONSORS, ADS, TRAINING, MAX_RATING, LEGACY_RATING_BONUS, LEGACY_EARN_BONUS, AWAY_EARN_MULT, BODY, INVEST,
 } from './data.js';
 import { simulateGame } from './sim.js';
 import * as E from './engine.js';
@@ -113,7 +113,7 @@ function renderArchGrid() {
   const grid = $('#archGrid');
   grid.innerHTML = '';
   for (const a of list) {
-    const ovr = E.computeOverall(E.startingRatings(a.id, 0, ui.body), ui.createPos);
+    const ovr = E.computeOverall(E.startingRatings(a.id, 0, ui.body), ui.createPos, a.id);
     const card = h('button', 'arch' + (a.id === ui.createArch ? ' on' : ''));
     card.innerHTML = `<b>${a.name}</b><p>${a.desc}</p><div class="chips"><span class="chip">Start OVR ${ovr}</span></div>`;
     card.onclick = () => { ui.createArch = a.id; renderCreate(); };
@@ -163,7 +163,7 @@ function renderArchDetail(archId, pos) {
   const cheap = Object.entries(a.cost).filter(([, m]) => m < 1).map(([c, m]) => `${c} -${Math.round((1 - m) * 100)}%`);
   const pricey = Object.entries(a.cost).filter(([, m]) => m > 1).map(([c, m]) => `${c} +${Math.round((m - 1) * 100)}%`);
   const rows = RATINGS.map((r) => {
-    const core = POSITIONS.find((p) => p.id === pos).core[r.id];
+    const core = E.coreWeights(pos, archId)[r.id];
     return `<div class="stat-row"><span>${core ? '★ ' : ''}${r.name}</span><b>${start[r.id]}</b></div>`;
   }).join('');
   $('#archDetail').innerHTML = `
@@ -176,7 +176,7 @@ function renderArchDetail(archId, pos) {
       ${cheap.map((c) => `<span class="chip cheap">Cheaper: ${c}</span>`).join('')}
       ${pricey.map((c) => `<span class="chip pricey">Pricier: ${c}</span>`).join('')}
     </div>
-    <p class="muted small" style="margin-top:10px">Starting Overall: <b style="color:var(--gold)">${E.computeOverall(start, pos)}</b>. Stars (★) mark ratings that make up Overall for this position. Other ratings still affect game results.</p>
+    <p class="muted small" style="margin-top:10px">Starting Overall: <b style="color:var(--gold)">${E.computeOverall(start, pos, archId)}</b>. Stars (★) mark ratings that make up Overall for this position and archetype. Other ratings still affect game results.</p>
     <div class="stats">${RATINGS.map((r) => `<div><span>${r.name}</span><b>${start[r.id]}</b></div>`).join('')}</div>
   `;
 }
@@ -189,7 +189,7 @@ function startCareer() {
   $('#feed').innerHTML = '';
   $('#lastGame').innerHTML = `<div class="cardhead">Last Game</div><div class="muted">No games yet. Your first tip-off is coming up.</div>`;
   save();
-  ui.nextAdAt = Date.now() + rand(ADS.minGapSec, ADS.maxGapSec) * 1000;
+  ui.nextAdAt = Date.now() + E.adGapSec(state) * 1000;
   toast(`Welcome to the G League, ${name}. Your first game is about to start.`, true);
   showGame();
 }
@@ -236,7 +236,7 @@ function buyRating(id) {
 }
 
 function renderRatings() {
-  const core = E.POS_BY_ID[state.pos].core;
+  const core = E.coreWeights(state.pos, state.archId);
   for (const r of RATINGS) {
     const row = ui.rowEls[r.id];
     if (!row) continue;
@@ -291,6 +291,7 @@ function buildSpeedSeg() {
 
 function renderAll() {
   if (!state) return;
+  renderInvest();
   const ovr = E.overallOf(state);
   const league = LEAGUES[state.leagueIdx];
   const contract = E.contractFor(ovr);
@@ -554,12 +555,12 @@ function finishDrill(forcedQuality, forcedMsg) {
     else if (d < 0.4) { quality = 1.0; label = 'Good'; }
     else { quality = 0.5; label = 'Sloppy'; }
   }
-  const coins = E.trainingReward({ overall: E.overallOf(state), ratings: state.ratings, leagueIdx: state.leagueIdx, quality });
+  const coins = E.trainingReward(state, quality);
   if (quality >= 2) { E.awardCapBreaker(state); toast('Perfect drill: +1 Cap Breaker', false); }
   state.coins += coins;
   state.career.training += coins;
   state.career.coinsEarned += coins;
-  ui.trainCdUntil = Date.now() + TRAINING.cooldownSec * 1000;
+  ui.trainCdUntil = Date.now() + E.trainingCooldownSec(state) * 1000;
   $('#trainResult').innerHTML = `${label} <span class="gain">+${fmt(coins)}</span>`;
   save();
   renderAll();
@@ -576,7 +577,7 @@ function maybeOfferAd() {
   if (!state) return;
   if (ui.ad) {
     const left = (ui.ad.expiresAt - Date.now()) / 1000;
-    if (left <= 0) { ui.ad = null; $('#adBox').innerHTML = 'Offer expired. Next one coming up.'; ui.nextAdAt = Date.now() + rand(ADS.minGapSec, ADS.maxGapSec) * 1000; }
+    if (left <= 0) { ui.ad = null; $('#adBox').innerHTML = 'Offer expired. Next one coming up.'; ui.nextAdAt = Date.now() + E.adGapSec(state) * 1000; }
     else {
       const pctLeft = Math.max(0, left / ADS.windowSec) * 100;
       $('#adInfo').textContent = `${Math.ceil(left)}s left`;
@@ -584,9 +585,12 @@ function maybeOfferAd() {
     }
     return;
   }
+  if (Date.now() < ui.nextAdAt) {
+    $('#adInfo').textContent = `next offer in ${Math.ceil((ui.nextAdAt - Date.now()) / 1000)}s`;
+  }
   if (Date.now() >= ui.nextAdAt) {
     const sponsor = pick(AD_SPONSORS);
-    const reward = E.adReward({ overall: E.overallOf(state), ratings: state.ratings, leagueIdx: state.leagueIdx });
+    const reward = E.adReward(state);
     ui.ad = { sponsor, reward, expiresAt: Date.now() + ADS.windowSec * 1000 };
     $('#adBox').innerHTML = `
       <div class="offer">
@@ -602,13 +606,13 @@ function maybeOfferAd() {
 
 function acceptAd() {
   if (!ui.ad) return;
-  const reward = E.adReward({ overall: E.overallOf(state), ratings: state.ratings, leagueIdx: state.leagueIdx });
+  const reward = E.adReward(state);
   state.coins += reward;
   state.career.ads += reward;
   state.career.coinsEarned += reward;
   $('#adBox').innerHTML = `<span class="gain">Deal signed!</span> +${fmt(reward)} coins from ${ui.ad.sponsor}.`;
   ui.ad = null;
-  ui.nextAdAt = Date.now() + rand(ADS.minGapSec, ADS.maxGapSec) * 1000;
+  ui.nextAdAt = Date.now() + E.adGapSec(state) * 1000;
   save();
   renderAll();
 }
@@ -617,7 +621,7 @@ function acceptAd() {
 function ascendPrompt() {
   const next = LEAGUES[state.leagueIdx + 1];
   const curBase = E.startingRatings(state.archId, state.ascensions + 1, state.body);
-  const ovr = E.computeOverall(curBase, state.pos);
+  const ovr = E.computeOverall(curBase, state.pos, state.archId);
   openModal({
     title: `Ascend to the ${next.name}?`,
     body: `<p>You have reached 99 Overall and won league MVP. Time to move up.</p>
@@ -667,6 +671,7 @@ function init() {
   // Game screen
   $('#pauseBtn').onclick = () => { ui.paused = !ui.paused; renderAll(); };
   $('#ascendBtn').onclick = ascendPrompt;
+  bindInvest();
   $('#menuBtn').onclick = menuPrompt;
   $('#buySeg').addEventListener('click', (e) => {
     const b = e.target.closest('button'); if (!b) return;
@@ -683,7 +688,7 @@ function init() {
   // Load or start
   state = load();
   if (state) {
-    ui.nextAdAt = Date.now() + rand(ADS.minGapSec, ADS.maxGapSec) * 1000;
+    ui.nextAdAt = Date.now() + E.adGapSec(state) * 1000;
     const offline = applyOfflineProgress();
     showGame();
     if (offline && offline.games > 0) showOfflineSummary(offline);
@@ -704,3 +709,32 @@ function init() {
 }
 
 init();
+
+// ================= INVESTMENTS =================
+function renderInvest() {
+  const el = $('#investBox');
+  if (!el || !state) return;
+  const row = (kind, title, desc) => {
+    const lvl = state.invest[kind];
+    const cost = E.investCost(state, kind);
+    const can = state.coins >= cost;
+    return `
+      <div class="inv-row">
+        <div class="inv-text"><b>${title} <span class="muted small">Lv ${lvl}</span></b>
+          <div class="small muted">${desc(lvl)}</div></div>
+        <button data-inv="${kind}" class="${can ? 'gold' : ''}">Upgrade ${fmt(cost)}</button>
+      </div>`;
+  };
+  el.innerHTML = `
+    ${row('agency', 'Agency', (l) => `Ad pay +${Math.round(INVEST.agency.payMult * l * 100)}%. Offers come ${Math.round(INVEST.agency.speed * l * 100)}% more often.`)}
+    ${row('trainer', 'Trainer', (l) => `Drill pay +${Math.round(INVEST.trainer.payMult * l * 100)}%. Drills recharge ${Math.round(INVEST.trainer.speed * l * 100)}% faster.`)}`;
+}
+
+function bindInvest() {
+  $('#investBox').onclick = (e) => {
+    const b = e.target.closest('button[data-inv]');
+    if (!b || !state) return;
+    if (E.buyInvest(state, b.dataset.inv)) { toast(`${b.dataset.inv === 'agency' ? 'Agency' : 'Trainer'} upgraded`, true); save(); }
+    renderAll();
+  };
+}

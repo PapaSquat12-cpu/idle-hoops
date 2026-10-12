@@ -260,3 +260,8 @@ input { font-size: 16px; }                          /* stops iOS zooming into th
 
 .slider-row { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center; margin: 8px 0; font-size: .9rem; }
 .slider-row input { grid-column: 1 / -1; width: 100%; }
+
+.inv-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.inv-row:last-child { border-bottom: none; }
+.inv-text { flex: 1; }
+.inv-row button { white-space: nowrap; }

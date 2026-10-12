@@ -92,6 +92,19 @@ export const POSITIONS = [
 // cost multipliers make upgrades in that category cheaper (<1) or pricier (>1).
 const A = (id, pos, name, desc, boosts, cost = {}) => ({ id, pos, name, desc, boosts, cost });
 
+// Extra core ratings an archetype adds on top of its position's core (these count toward Overall)
+export const ARCH_CORE_EXTRA = {
+  'pf-stretch': { three: 2 },   // Stretch Four
+  'c-stretch':  { three: 2 },   // Stretch Five
+};
+
+// Core weights for a position, plus any archetype extras
+export function coreWeights(pos, archId) {
+  const base = POSITIONS.find((p) => p.id === pos).core;
+  const extra = archId && ARCH_CORE_EXTRA[archId];
+  return extra ? { ...base, ...extra } : base;
+}
+
 export const ARCHETYPES = [
   // ---- Point Guards
   A('pg-floor', 'PG', 'Floor General', 'Elite court vision and passing. Runs the offense and makes everyone better.', { pass: 24, vision: 22, iq: 14, handle: 10 }, { Offense: 0.85, Mental: 0.85, Defense: 1.1, Athletic: 1.15, Rebounding: 1.3 }),
@@ -166,11 +179,11 @@ export const LEAGUES = [
 // Contract tiers keyed by Overall. base = coins per game at 30 minutes in the G League.
 export const CONTRACTS = [
   { name: 'Two-Way Deal',     minOvr: 0,  base: 30 },
-  { name: 'Bench Deal',       minOvr: 48, base: 50 },
-  { name: 'Rotation Deal',    minOvr: 56, base: 75 },
-  { name: 'Starter Deal',     minOvr: 63, base: 110 },
-  { name: 'Max Starter',      minOvr: 68, base: 160 },
-  { name: 'All-Star Deal',    minOvr: 74, base: 230 },
+  { name: 'Bench Deal',       minOvr: 60, base: 50 },
+  { name: 'Rotation Deal',    minOvr: 64, base: 75 },
+  { name: 'Starter Deal',     minOvr: 68, base: 110 },
+  { name: 'Max Starter',      minOvr: 72, base: 160 },
+  { name: 'All-Star Deal',    minOvr: 76, base: 230 },
   { name: 'Superstar Deal',   minOvr: 80, base: 330 },
   { name: 'MVP Max',          minOvr: 86, base: 470 },
   { name: 'Legend Deal',      minOvr: 92, base: 670 },
@@ -182,6 +195,19 @@ export const CONTRACTS = [
 // rate: fraction of a 30-minute game; avg rating is measured against 60
 export const TRAINING = { cooldownSec: 45, rate: 0.15 };
 export const ADS = { minGapSec: 40, maxGapSec: 80, windowSec: 20, rate: 0.4 };
+// Side income is a share of the current contract base (which already tracks Overall).
+// Ascension legacy multiplier applies, as it does to games.
+export const SIDE_FLOOR = 40;   // Overall where contract-based side income starts
+export const SIDE_RATE = { ad: 0.25, drill: 0.10 };   // fraction of contract base per payout
+
+// Investments are bought with coins and have no level cap. Payouts grow linearly per level,
+// and timing gains use a fraction that never reaches zero. Levels carry over through ascension.
+export const INVEST = {
+  costExp: 2,                                                  // level n+1 costs gamesBase x typical game pay x (n+1)^2
+  agency:  { gamesBase: 15, payMult: 0.35, speed: 0.06 },     // ads: +35% pay per level; gap between offers divided by (1 + 0.06 x level)
+  trainer: { gamesBase: 12, payMult: 0.30, speed: 0.06 },     // drills: +30% pay per level; cooldown divided by (1 + 0.06 x level)
+};
+
 export const AWAY_EARN_MULT = 0.5;    // games played while away (tab hidden, idle, or offline) pay half
 export const AD_SPONSORS = ['Hoopline Sneakers', 'Turbo Energy Drink', 'Metro Auto Group', 'Court Cola', 'Skyline Bank', 'Glide Razors', 'Pulse Wearables', 'Orbit Airlines'];
 

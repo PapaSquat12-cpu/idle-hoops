@@ -5,10 +5,11 @@ import {
   MAX_RATING, BASE_RATING, START_CAP, SEASON_GAMES, COST, RATINGS, POSITIONS, ARCHETYPES,
   LEAGUES, CONTRACTS, LEGACY_RATING_BONUS, LEGACY_EARN_BONUS, TRAINING, ADS, CATEGORIES,
   NON_BOOST_CAP, CAP_BREAK_STEP, CAP_BREAK_GS36, BODY,
+  coreWeights, INVEST, SIDE_RATE,
 } from './data.js';
 import { computeOverall, gaussian, clamp } from './sim.js';
 
-export { computeOverall };
+export { computeOverall, coreWeights };
 
 export const RATING_BY_ID = Object.fromEntries(RATINGS.map((r) => [r.id, r]));
 export const ARCH_BY_ID = Object.fromEntries(ARCHETYPES.map((a) => [a.id, a]));
@@ -118,7 +119,7 @@ export const leagueCostMult = (leagueIdx) => Math.pow(LEAGUES[leagueIdx].coinMul
 export function pointCost(ratingId, value, archId, leagueIdx = 0) {
   const a = ARCH_BY_ID[archId];
   const mult = a.cost[RATING_BY_ID[ratingId].cat] ?? 1;
-  const w = POS_BY_ID[a.pos].core[ratingId] || 0;
+  const w = coreWeights(a.pos, archId)[ratingId] || 0;
   const corePremium = w ? 1 + COST.corePerWeight * w : 1;
   return Math.max(1, Math.ceil(COST.base * mult * corePremium * leagueCostMult(leagueIdx) * Math.pow(COST.growth, value - COST.offset)));
 }
@@ -181,20 +182,60 @@ function avgRating(ratings) {
   return vals.reduce((a, b) => a + b, 0) / vals.length;
 }
 
-// Side income: a share of a typical game's pay at the current contract. Scales with league,
-// contract (overall) and average rating.
-function sideBase({ overall, ratings, leagueIdx }) {
-  const c = contractFor(overall);
-  const league = LEAGUES[leagueIdx];
-  return c.base * league.coinMult * (avgRating(ratings) / 60);
+// ---------- Side income: ads and training drills ----------
+export function investLevel(state, kind) {
+  return (state.invest && state.invest[kind]) || 0;
 }
 
-export function trainingReward({ overall, ratings, leagueIdx, quality }) {
-  return Math.round(sideBase({ overall, ratings, leagueIdx }) * TRAINING.rate * quality);
+// Pay for a typical game at the current contract, league, and ascension
+export function typicalGamePay(state) {
+  const ovr = overallOf(state);
+  return gameEarnings({ overall: ovr, minutes: minutesFor(ovr), gs36: 15, leagueIdx: state.leagueIdx, ascensions: state.ascensions });
 }
 
-export function adReward({ overall, ratings, leagueIdx }) {
-  return Math.round(sideBase({ overall, ratings, leagueIdx }) * ADS.rate);
+// Cost of the next level: a number of typical games' pay, growing with (level+1)^costExp
+export function investCost(state, kind) {
+  const next = investLevel(state, kind) + 1;
+  return Math.round(INVEST[kind].gamesBase * typicalGamePay(state) * Math.pow(next, INVEST.costExp));
+}
+
+export function buyInvest(state, kind) {
+  if (!INVEST[kind]) return false;
+  const cost = investCost(state, kind);
+  if (state.coins < cost) return false;
+  state.coins -= cost;
+  state.career.coinsSpent += cost;
+  state.invest = { agency: investLevel(state, 'agency'), trainer: investLevel(state, 'trainer'), [kind]: investLevel(state, kind) + 1 };
+  return true;
+}
+
+// Seconds until the next sponsor offer. Agency levels divide the gap by (1 + speed * level).
+export function adGapSec(state) {
+  const div = 1 + INVEST.agency.speed * investLevel(state, 'agency');
+  const lo = ADS.minGapSec / div, hi = ADS.maxGapSec / div;
+  return lo + Math.random() * (hi - lo);
+}
+
+// Drill cooldown in seconds. Trainer levels divide it by (1 + speed * level).
+export function trainingCooldownSec(state) {
+  return TRAINING.cooldownSec / (1 + INVEST.trainer.speed * investLevel(state, 'trainer'));
+}
+
+function contractBase(state) {
+  return contractFor(overallOf(state)).base;
+}
+
+export function adReward(state) {
+  const league = LEAGUES[state.leagueIdx];
+  return Math.round(contractBase(state) * SIDE_RATE.ad * league.coinMult
+    * (1 + INVEST.agency.payMult * investLevel(state, 'agency')) * legacyEarnMult(state.ascensions));
+}
+
+// quality: 0.5 (sloppy) to 2 (perfect)
+export function trainingReward(state, quality) {
+  const league = LEAGUES[state.leagueIdx];
+  return Math.round(contractBase(state) * SIDE_RATE.drill * league.coinMult
+    * (1 + INVEST.trainer.payMult * investLevel(state, 'trainer')) * quality * legacyEarnMult(state.ascensions));
 }
 
 export const emptySeason = () => ({ gp: 0, w: 0, l: 0, min: 0, gsSum: 0, pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0, fgm: 0, fga: 0, tpm: 0, tpa: 0 });
@@ -208,6 +249,7 @@ export function newCareer({ name, pos, archId, body }) {
     ratings: startingRatings(archId, 0, b),
     capBonus: {},
     capBreakers: 0,
+    invest: { agency: 0, trainer: 0 },
     leagueIdx: 0,
     ascensions: 0,
     coins: 0,
@@ -221,7 +263,7 @@ export function newCareer({ name, pos, archId, body }) {
 }
 
 export function overallOf(state) {
-  return computeOverall(state.ratings, state.pos);
+  return computeOverall(state.ratings, state.pos, state.archId);
 }
 
 // ---------- Upgrades & cap breakers ----------
@@ -339,6 +381,7 @@ export function deserialize(str) {
   s.capBonus = s.capBonus || {};
   s.body = clampBody(s.body, s.pos);
   s.capBreakers = s.capBreakers || 0;
+  s.invest = s.invest || { agency: 0, trainer: 0 };
   s.career.breakers = s.career.breakers || 0;
   return s;
 }

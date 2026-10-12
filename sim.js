@@ -1,7 +1,7 @@
 // ===== Possession-level game simulation with play-by-play events =====
 // Pure logic (no DOM) so it can be balance-tested under Node.
 
-import { POSITIONS } from './data.js';
+import { coreWeights } from './data.js';
 
 const POSSESSIONS = 100;   // possessions per team per game (4 quarters x 25)
 const REB_POS = { PG: 0.4, SG: 0.55, SF: 0.85, PF: 1.15, C: 1.3 };
@@ -19,8 +19,8 @@ export function gaussian(mu, sd) {
   return mu + sd * Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 }
 
-export function computeOverall(ratings, pos) {
-  const core = POSITIONS.find((p) => p.id === pos).core;
+export function computeOverall(ratings, pos, archId) {
+  const core = coreWeights(pos, archId);
   let s = 0, w = 0;
   for (const [id, wt] of Object.entries(core)) { s += ratings[id] * wt; w += wt; }
   return Math.round(s / w);
