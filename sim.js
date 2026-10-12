@@ -4,6 +4,7 @@
 import { POSITIONS } from './data.js';
 
 const POSSESSIONS = 100;   // possessions per team per game (4 quarters x 25)
+const REB_POS = { PG: 1.0, SG: 0.9, SF: 1.0, PF: 1.2, C: 1.3 };
 const CYCLE_MIN = 0.48;    // game minutes per possession cycle (48 / 100)
 
 export const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
@@ -75,6 +76,9 @@ export function simulateGame(o) {
   const oppQ = league.teamOvr + rnd(-5, 5);
   const oppName = o.opponent || 'Opponent';
   const onP = clamp(o.minutes / 48, 0, 1);
+  const rp = REB_POS[o.pos] ?? 1;
+  // Rebound chance grows with the square of the rating, so average ratings get few boards
+  const rebP = (rating, scale) => Math.min(0.25, rp * scale * Math.pow(rating / 100, 2));
 
   const box = { min: 0, pts: 0, fgm: 0, fga: 0, tpm: 0, tpa: 0, ftm: 0, fta: 0, orb: 0, drb: 0, ast: 0, stl: 0, blk: 0, tov: 0, pf: 0 };
   const events = [];
@@ -108,7 +112,7 @@ export function simulateGame(o) {
             push(i, 'key', pick(T.assist));
           } else push(i, 'team', pick(T.teamMake));
         } else {
-          if (chance(0.01 + r.orb / 900)) { box.orb++; push(i, 'key', pick(T.orb)); }
+          if (chance(rebP(r.orb, 0.08))) { box.orb++; push(i, 'key', pick(T.orb)); }
           else push(i, 'team', pick(T.teamMiss));
         }
       } else {
@@ -147,7 +151,7 @@ export function simulateGame(o) {
             else { box.pts += 2; own += 2; }
             push(i, 'key', pick(T[type]));
           } else {
-            if (chance(0.02 + r.orb / 500)) {
+            if (chance(rebP(r.orb, 0.2))) {
               box.orb++;
               push(i, 'key', pick(T['miss' + (type === 'three' ? 'Three' : type === 'mid' ? 'Mid' : 'In')]));
               push(i, 'key', pick(T.orb));
@@ -172,7 +176,7 @@ export function simulateGame(o) {
     }
     if (on && chance(0.03)) { box.pf++; push(i, 'bad', pick(T.defFoul)); }
 
-    if (on && chance(0.55) && chance(0.003 + r.block / 1000)) {
+    if (on && chance(0.0005 + 0.035 * Math.pow(r.block / 100, 3))) {
       box.blk++;
       push(i, 'key', pick(T.block));
       if (chance(0.5)) { box.drb++; push(i, 'key', pick(T.drb)); }
@@ -182,7 +186,7 @@ export function simulateGame(o) {
       opp += 2 + (chance(0.36) ? 1 : 0);
       push(i, on ? 'bad' : 'opp', pick(T.oppMake));
     } else {
-      if (on && chance(0.02 + r.drb / 500)) { box.drb++; push(i, 'key', pick(T.drb)); }
+      if (on && chance(rebP(r.drb, 0.35))) { box.drb++; push(i, 'key', pick(T.drb)); }
       else push(i, 'opp', pick(T.oppMiss));
     }
   }
