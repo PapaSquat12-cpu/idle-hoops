@@ -368,3 +368,23 @@ input { font-size: 16px; }                          /* stops iOS zooming into th
 #game .tabpanel[data-panel=engage] { gap: 6px; }
 #game .tabpanel[data-panel=engage] .card { margin-bottom: 0; }
 #game .tabpanel[data-panel=engage] .card { padding: 9px 11px; }
+
+/* Compact game header: name and coins on one row, controls in one row below */
+#game .gtop { display: grid; grid-template-columns: minmax(0,1fr) auto; grid-template-areas: "id coins" "ctrl ctrl"; gap: 6px 8px; padding: 6px 10px; align-items: center; }
+#game .gident { grid-area: id; min-width: 0; }
+#game .gident .pname { font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#game .gident .psub { font-size: .7rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#game .hstat.coins { grid-area: coins; text-align: right; }
+#game .hstat.coins b { font-size: 1.05rem; }
+#game .hstat.coins small { display: none; }
+#game .gctrl { grid-area: ctrl; display: flex; flex-wrap: nowrap; gap: 4px; align-items: center; min-width: 0; }
+#game .gctrl > * { flex: 0 0 auto; }
+#game .gctrl button { padding: 4px 8px; font-size: .76rem; }
+#game .gctrl .seg button { padding: 4px 7px; font-size: .76rem; }
+#game #paceBadge { font-size: .66rem; padding: 2px 6px; white-space: nowrap; }
+#game .hstat.coins small { display: block; font-size: .6rem; }
+
+/* Tighter rating rows so all categories (incl. Mental) fit in two columns */
+#game .rrow { padding: 2px 4px; row-gap: 1px; }
+#game .rrow button { padding: 2px 2px; }
+#game .catlbl { margin: 3px 0 0; padding: 0; line-height: 1.2; }
