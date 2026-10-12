@@ -194,3 +194,66 @@ button.big { padding: 12px 28px; font-size: 1.1rem; }
 .pace { font-size: .8rem; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
 .pace.watch { color: var(--green); border-color: rgba(61,220,132,.5); }
 .pace.away { color: var(--muted); border-color: var(--line); }
+
+/* ===== Mobile & layout stability ===== */
+html { scrollbar-gutter: stable; }                 /* scrollbar appearing/disappearing no longer shifts the page */
+body { overflow-x: hidden; -webkit-text-size-adjust: 100%; }
+input { font-size: 16px; }                          /* stops iOS zooming into the name field */
+
+/* Fixed-width numbers so values changing don't reflow neighbours */
+.hstat b, .statgrid b, .benchmark b, .rrow .val, .rrow .cost, #sbClock, #sbQ { font-variant-numeric: tabular-nums; }
+.hstat { min-width: 0; }
+.hstat.coins b { min-width: 6ch; }
+.ident { min-width: 0; }
+.ident .pname, .ident .psub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Scoreboard: teams share the row, names wrap instead of being clipped */
+.scoreboard { grid-template-columns: minmax(0, 1fr) 118px minmax(0, 1fr); }
+.team { min-width: 0; }
+.team span { min-width: 0; overflow-wrap: anywhere; line-height: 1.1; }
+.team.opp { text-align: right; }
+.clock { width: 118px; min-width: 0; }
+.status { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#lastGame { min-height: 110px; }
+
+/* Ratings rows keep their columns on narrow screens */
+.rrow { grid-template-columns: minmax(0, 1fr) 40px 78px 66px; }
+.rrow .rname small { display: none; }
+.rrow button { min-width: 62px; }
+.rrow .cost { white-space: nowrap; }
+
+@media (max-width: 720px) {
+  #game { padding: 8px; }
+  .topbar { gap: 8px 12px; padding: 8px 10px; }
+  .hstat { padding-left: 10px; }
+  .hstat.coins b { font-size: 1.1rem; }
+  .controls { width: 100%; margin-left: 0; justify-content: space-between; }
+  .controls button { padding: 6px 8px; font-size: .85rem; }
+  .card { padding: 12px; margin-bottom: 10px; }
+  .grid { gap: 10px; }
+  /* Phone order: scoreboard + play-by-play first, then player/ratings, then side panels */
+  .grid > .col.wide { order: 1; }
+  .grid > .col:first-child { order: 2; }
+  .grid > .col:last-child { order: 3; }
+  .scoreboard { padding: 10px 8px; gap: 6px; grid-template-columns: minmax(0, 1fr) 92px minmax(0, 1fr); }
+  .team { gap: 6px; }
+  .team b { font-size: 2.2rem; }
+  .team span { font-size: .8rem; font-weight: 700; }
+  .clock { width: 92px; min-width: 0; }
+  #sbClock { font-size: 1.4rem; }
+  .feedwrap #feed { height: 300px; }
+  .line { font-size: .88rem; }
+  .line .t { min-width: 0; margin-right: 6px; }
+  .ovr-wrap { width: 110px; height: 110px; }
+  .ovr { font-size: 2.8rem; }
+  .lastgame .gl { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .statgrid { grid-template-columns: 1fr 1fr; }
+}
+
+/* Scoreboard has a fixed height so wrapping names or status changes never push the feed around */
+.scoreboard { height: 118px; overflow: hidden; }
+@media (max-width: 720px) {
+  .scoreboard { height: 104px; }
+  .team span { font-size: .72rem; line-height: 1.05; }
+  .status { font-size: .72rem; }
+}
