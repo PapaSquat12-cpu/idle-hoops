@@ -1,0 +1,10 @@
+{
+  "name": "idle-hoops-career",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "serve": "python3 -m http.server 8080 --bind 0.0.0.0",
+    "balance": "node tests/bot.mjs"
+  }
+}

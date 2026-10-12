@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Idle Hoops: The Career</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ===================== CREATE SCREEN ===================== -->
+  <section id="create" class="screen">
+    <header class="create-head">
+      <div>
+        <h1>IDLE HOOPS <span>The Career</span></h1>
+        <p class="tagline">Build one player from the G League to the Legends League. Every game earns coins. Spend them on ratings.</p>
+      </div>
+      <button id="continueBtn" class="hidden">Continue Career</button>
+    </header>
+
+    <div class="create-body">
+      <div class="card">
+        <div class="cardhead">1. Name &amp; Position</div>
+        <label class="field">Player name
+          <input id="pname" maxlength="24" placeholder="Your name" />
+        </label>
+        <div class="postabs" id="posTabs"></div>
+        <p class="posblurb" id="posBlurb"></p>
+      </div>
+
+      <div class="card">
+        <div class="cardhead">2. Choose Your Archetype <small id="archCount"></small></div>
+        <div class="archgrid" id="archGrid"></div>
+      </div>
+
+      <div class="card detail" id="archDetail"></div>
+    </div>
+
+    <footer class="create-foot">
+      <button id="startBtn" class="gold big">Start Career</button>
+    </footer>
+  </section>
+
+  <!-- ===================== GAME SCREEN ===================== -->
+  <section id="game" class="screen hidden">
+    <header class="topbar">
+      <div class="ident">
+        <div class="pname" id="hName">-</div>
+        <div class="psub" id="hSub">-</div>
+      </div>
+      <div class="hstat"><span>League</span><b id="hLeague">-</b></div>
+      <div class="hstat"><span>Season</span><b id="hSeason">-</b></div>
+      <div class="hstat"><span>Record</span><b id="hRecord">-</b></div>
+      <div class="hstat coins"><span>Coins</span><b id="hCoins">0</b><small id="hRate"></small></div>
+      <div class="controls">
+        <div class="seg" id="speedSeg"></div>
+        <button id="pauseBtn">Pause</button>
+        <span id="paceBadge" class="pace watch">Watching</span>
+        <button id="ascendBtn" class="gold hidden">Ascend</button>
+        <button id="menuBtn">Menu</button>
+      </div>
+    </header>
+
+    <main class="grid">
+      <!-- LEFT: player + ratings -->
+      <aside class="col">
+        <div class="card player">
+          <div class="ovr-wrap">
+            <div class="ovr" id="ovr">--</div>
+            <div class="ovr-lbl">OVERALL</div>
+          </div>
+          <div class="meta">
+            <div><span>Contract</span><b id="contractName">-</b></div>
+            <div><span>Minutes target</span><b id="minTarget">-</b></div>
+            <div><span>Next contract</span><b id="nextContract">-</b></div>
+            <div><span>Est. coins / game</span><b id="estGame">-</b></div>
+            <div><span>Legacy</span><b id="legacy">-</b></div>
+          </div>
+          <div class="ready">
+            <div class="cardhead small">Ascension Requirements</div>
+            <div class="req" id="reqOvr"></div>
+            <div class="req" id="reqMvp"></div>
+          </div>
+        </div>
+
+        <div class="card ratings">
+          <div class="cardhead">
+            Ratings
+            <div class="seg small" id="buySeg">
+              <button data-buy="1" class="on">+1</button>
+              <button data-buy="10">+10</button>
+              <button data-buy="100">+100</button>
+              <button data-buy="max">Max</button>
+            </div>
+          </div>
+          <div id="ratingList"></div>
+        </div>
+      </aside>
+
+      <!-- CENTER: game -->
+      <section class="col wide">
+        <div class="card scoreboard">
+          <div class="team you"><span id="sbYouName">YOU</span><b id="sbYou">0</b></div>
+          <div class="clock">
+            <div id="sbQ">Q1</div>
+            <div id="sbClock">12:00</div>
+            <div id="sbStatus" class="status">Tip-off</div>
+          </div>
+          <div class="team opp"><b id="sbOpp">0</b><span id="sbOppName">OPP</span></div>
+        </div>
+        <div class="card feedwrap">
+          <div class="cardhead">Play-by-Play <small id="gameLabel"></small></div>
+          <div id="feed"></div>
+        </div>
+        <div class="card lastgame" id="lastGame">
+          <div class="cardhead">Last Game</div>
+          <div class="muted">No games yet. Your first tip-off is coming up.</div>
+        </div>
+      </section>
+
+      <!-- RIGHT: side income + stats -->
+      <aside class="col">
+        <div class="card training">
+          <div class="cardhead">Training Drill <small id="trainCd"></small></div>
+          <p class="muted small">Stop the marker in the green zone. Better timing pays more. Scales with your Overall and ratings.</p>
+          <div class="drill" id="drill"><div class="zone"></div><div class="marker" id="marker"></div></div>
+          <div class="drillrow">
+            <button id="trainBtn" class="gold">Start Drill</button>
+            <span id="trainResult" class="muted small"></span>
+          </div>
+        </div>
+
+        <div class="card ads">
+          <div class="cardhead">Sponsor Deals <small id="adInfo"></small></div>
+          <div id="adBox" class="muted small">Next sponsor offer arrives soon.</div>
+        </div>
+
+        <div class="card">
+          <div class="cardhead">Season Stats</div>
+          <div class="statgrid" id="seasonGrid"></div>
+          <div class="benchmark">
+            <div><span>Game Score / 36</span><b id="gsNow">-</b></div>
+            <div><span>MVP benchmark</span><b id="gsBench">-</b></div>
+          </div>
+          <div class="muted small" id="lastSeason"></div>
+        </div>
+
+        <div class="card">
+          <div class="cardhead">Contract Ladder</div>
+          <div id="ladder"></div>
+        </div>
+
+        <div class="card">
+          <div class="cardhead">Career</div>
+          <div class="statgrid" id="careerGrid"></div>
+        </div>
+      </aside>
+    </main>
+  </section>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <div id="modal" class="modal hidden">
+    <div class="modal-box">
+      <h2 id="mTitle"></h2>
+      <div id="mBody"></div>
+      <div class="modal-btns">
+        <button id="mCancel">Cancel</button>
+        <button id="mOk" class="gold">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
