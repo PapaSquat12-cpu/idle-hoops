@@ -1,13 +1,49 @@
 // ===== Static game configuration =====
 
 export const MAX_RATING = 99;
+
+// Body type: height and weight shift starting ratings and add cap bonuses.
+// Units: 1 height unit = 4 inches from 6'6" (78"); 1 weight unit = 30 lb from 210.
+// Effects scale across each position's own range: the bottom edge is the full negative
+// effect, the top edge the full positive effect, and the midpoint is neutral.
+export const BODY = {
+  height: { min: 66, max: 91, def: 78 },
+  weight: { min: 160, max: 320, def: 210 },
+  // Allowed ranges by position (inches, lb). Sliders and the saved build stay inside these.
+  byPos: {
+    PG: { height: [66, 81], weight: [160, 200] },   // 5'6" - 6'9",  160-200 lb
+    SG: { height: [73, 82], weight: [180, 220] },   // 6'1" - 6'10", 180-220 lb
+    SF: { height: [76, 83], weight: [200, 250] },   // 6'4" - 6'11", 200-250 lb
+    PF: { height: [78, 87], weight: [220, 280] },   // 6'6" - 7'3",  220-280 lb
+    C:  { height: [80, 91], weight: [240, 320] },   // 6'8" - 7'7",  240-320 lb
+  },
+  hPer: 4,
+  wPer: 30,
+  unitClamp: 1.5,
+  startShift: {
+    h: { inside: 2, intD: 2, orb: 2, drb: 2, block: 2.5, handle: -1.5, three: -1, speed: -1 },
+    w: { str: 3, inside: 1, vert: -1, speed: -1.5 },
+  },
+  capStep: 5,
+  // Position-relative position from -1 (bottom of range) to +1 (top). A rule applies when axis * dir >= at.
+  // at = 0.5 means the outer quarter of the range on that side.
+  capRules: [
+    { axis: 'h', dir: 1,  at: 0.5, ratings: ['intD', 'orb', 'drb', 'block'] },  // tall
+    { axis: 'h', dir: -1, at: 0.5, ratings: ['handle', 'three', 'speed'] },     // short
+    { axis: 'w', dir: 1,  at: 0.5, ratings: ['str', 'inside'] },                // heavy
+    { axis: 'w', dir: -1, at: 0.5, ratings: ['speed', 'handle'] },              // light
+  ],
+};
+export const NON_BOOST_CAP = 80;      // ratings the archetype doesn't boost stop at this until you earn Cap Breakers
+export const CAP_BREAK_STEP = 5;      // each Cap Breaker raises one rating's cap by this much
+export const CAP_BREAK_GS36 = 25;     // a game this strong (Game Score per 36) earns a Cap Breaker
 export const BASE_RATING = 45;      // every rating starts here before archetype boosts
 export const START_CAP = 85;        // archetype starting ratings never exceed this
 export const SEASON_GAMES = 82;
 export const RATING_TICK = 1;       // each purchase adds this much
 
 // Coin cost of one rating point: COST.base * catMult * leagueMult * growth^(value - offset)
-export const COST = { base: 25, growth: 1.06, offset: 20, leagueExp: 0.85, corePerWeight: 0.25 };
+export const COST = { base: 25, growth: 1.075, offset: 20, leagueExp: 0.85, corePerWeight: 0.25 };
 
 // Legacy: each ascension adds this to every starting rating and this fraction to earnings
 export const LEGACY_RATING_BONUS = 2;
@@ -105,47 +141,48 @@ export const ARCHETYPES = [
 ];
 
 export const LEAGUES = [
-  { id: 'gl', name: 'G League', coinMult: 1, teamOvr: 52, mvpMu: 30.5,
+  { id: 'gl', name: 'G League', coinMult: 1, teamOvr: 52, mvpMu: 21.0,
     teams: ['Rio Grande Vipers', 'Motor City Rockers', 'Sioux Falls Storm', 'Westchester Wolves', 'Long Island Lightning', 'Salt Lake Summit', 'Birmingham Iron', 'Toronto Ridge'] },
-  { id: 'nba', name: 'NBA', coinMult: 6, teamOvr: 60, mvpMu: 29.5,
+  { id: 'nba', name: 'NBA', coinMult: 6, teamOvr: 60, mvpMu: 19.5,
     teams: ['Boston Harbor', 'Chicago Forge', 'Denver Peaks', 'Miami Tide', 'Phoenix Mesa', 'Seattle Pines', 'Atlanta Crown', 'Dallas Mesa'] },
-  { id: 'euro', name: 'EuroLeague Elite', coinMult: 25, teamOvr: 66, mvpMu: 27.5,
+  { id: 'euro', name: 'EuroLeague Elite', coinMult: 25, teamOvr: 66, mvpMu: 18.5,
     teams: ['Madrid Royals', 'Milan Bolts', 'Belgrade Eagles', 'Athens Titans', 'Istanbul Crescent', 'Munich Alpine', 'Paris Lumiere', 'Vilnius Storm'] },
-  { id: 'pac', name: 'Pacific Rim Pro', coinMult: 60, teamOvr: 69, mvpMu: 26,
+  { id: 'pac', name: 'Pacific Rim Pro', coinMult: 60, teamOvr: 69, mvpMu: 18.0,
     teams: ['Kyoto Blaze', 'Melbourne Reef', 'Seoul Comets', 'Auckland Gales', 'Manila Typhoons', 'Osaka Ironclads', 'Perth Current', 'Taipei Dragons'] },
-  { id: 'world', name: 'World Superleague', coinMult: 90, teamOvr: 72, mvpMu: 26.5,
+  { id: 'world', name: 'World Superleague', coinMult: 90, teamOvr: 72, mvpMu: 17.5,
     teams: ['Tokyo Thunder', 'Sydney Surge', 'Dubai Oasis', 'Lagos Kings', 'Rio Sol', 'Shanghai Dragons', 'Cairo Pyramids', 'Mumbai Monsoon'] },
-  { id: 'cont', name: 'Continental Crown', coinMult: 150, teamOvr: 74, mvpMu: 26.5,
+  { id: 'cont', name: 'Continental Crown', coinMult: 150, teamOvr: 74, mvpMu: 17.0,
     teams: ['Andes Condors', 'Sahara Lions', 'Nordic Frost', 'Pacific Tide', 'Atlas Mountain', 'Caspian Wolves', 'Savanna Kings', 'Alpine Bears'] },
-  { id: 'olymp', name: 'Olympus Circuit', coinMult: 220, teamOvr: 76, mvpMu: 24.5,
+  { id: 'olymp', name: 'Olympus Circuit', coinMult: 220, teamOvr: 76, mvpMu: 16.5,
     teams: ['Mount Athens', 'Thunder Peaks', 'Delphi Oracles', 'Pantheon Guard', 'Aegis Spartans', 'Ares Blades', 'Hermes Wings', 'Helios Suns'] },
-  { id: 'legend', name: 'Legends League', coinMult: 300, teamOvr: 78, mvpMu: 23.5,
+  { id: 'legend', name: 'Legends League', coinMult: 300, teamOvr: 78, mvpMu: 16.0,
     teams: ['Olympus Gods', 'Eternal Flame', 'Titan Crown', 'Starfall Kings', 'Mythos Legends', 'Apex Immortals', 'Zenith Dynasty', 'Sovereign Stars'] },
-  { id: 'hall', name: 'Hall of Fame Circuit', coinMult: 500, teamOvr: 80, mvpMu: 25,
+  { id: 'hall', name: 'Hall of Fame Circuit', coinMult: 500, teamOvr: 80, mvpMu: 15.5,
     teams: ['Springfield Legends', 'Canton Immortals', 'Cooperstown Greats', 'Naismith Aces', 'Hoops Pantheon', 'Retired Numbers', 'Rafter Kings', 'Cathedral Five'] },
-  { id: 'immortal', name: 'Immortal League', coinMult: 800, teamOvr: 82, mvpMu: 24,
+  { id: 'immortal', name: 'Immortal League', coinMult: 800, teamOvr: 82, mvpMu: 15.0,
     teams: ['Eternal Throne', 'Celestial Hoops', 'Mythic Court', 'Timeless Crown', 'Ascendant Five', 'Infinite Rim', 'Legacy Prime', 'The Pantheon'] },
 ];
 
 // Contract tiers keyed by Overall. base = coins per game at 30 minutes in the G League.
 export const CONTRACTS = [
   { name: 'Two-Way Deal',     minOvr: 0,  base: 30 },
-  { name: 'Bench Deal',       minOvr: 48, base: 70 },
-  { name: 'Rotation Deal',    minOvr: 56, base: 130 },
-  { name: 'Starter Deal',     minOvr: 63, base: 260 },
-  { name: 'Max Starter',      minOvr: 68, base: 450 },
-  { name: 'All-Star Deal',    minOvr: 74, base: 800 },
-  { name: 'Superstar Deal',   minOvr: 80, base: 1500 },
-  { name: 'MVP Max',          minOvr: 86, base: 2800 },
-  { name: 'Legend Deal',      minOvr: 92, base: 5000 },
-  { name: 'GOAT Deal',        minOvr: 97, base: 8000 },
+  { name: 'Bench Deal',       minOvr: 48, base: 50 },
+  { name: 'Rotation Deal',    minOvr: 56, base: 75 },
+  { name: 'Starter Deal',     minOvr: 63, base: 110 },
+  { name: 'Max Starter',      minOvr: 68, base: 160 },
+  { name: 'All-Star Deal',    minOvr: 74, base: 230 },
+  { name: 'Superstar Deal',   minOvr: 80, base: 330 },
+  { name: 'MVP Max',          minOvr: 86, base: 470 },
+  { name: 'Legend Deal',      minOvr: 92, base: 670 },
+  { name: 'GOAT Deal',        minOvr: 97, base: 950 },
 ];
 
 // Side income (scales with rating and overall)
-// Side income: ratings below SIDE_FLOOR earn nothing extra, so early drills and ads pay very little
-export const SIDE_FLOOR = 40;
-export const TRAINING = { cooldownSec: 20, baseCoins: 2, perOvr: 0.15, perAvg: 0.05 };
-export const ADS = { minGapSec: 40, maxGapSec: 80, windowSec: 20, perOvr: 0.8, perAvg: 0.3 };
+// Side income is a share of what a typical game pays at your contract tier
+// rate: fraction of a 30-minute game; avg rating is measured against 60
+export const TRAINING = { cooldownSec: 45, rate: 0.15 };
+export const ADS = { minGapSec: 40, maxGapSec: 80, windowSec: 20, rate: 0.4 };
+export const AWAY_EARN_MULT = 0.5;    // games played while away (tab hidden, idle, or offline) pay half
 export const AD_SPONSORS = ['Hoopline Sneakers', 'Turbo Energy Drink', 'Metro Auto Group', 'Court Cola', 'Skyline Bank', 'Glide Razors', 'Pulse Wearables', 'Orbit Airlines'];
 
 export const FIRST_NAMES = ['Marcus', 'Jaylen', 'Devin', 'Tre', 'Kobe', 'Malik', 'Trey', 'Andre', 'Cam', 'Dorian', 'Jalen', 'Zion'];

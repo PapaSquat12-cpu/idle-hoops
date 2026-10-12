@@ -33,6 +33,8 @@
         <div class="archgrid" id="archGrid"></div>
       </div>
 
+      <div class="card" id="bodyCard"></div>
+
       <div class="card detail" id="archDetail"></div>
     </div>
 
@@ -52,6 +54,7 @@
       <div class="hstat"><span>Season</span><b id="hSeason">-</b></div>
       <div class="hstat"><span>Record</span><b id="hRecord">-</b></div>
       <div class="hstat coins"><span>Coins</span><b id="hCoins">0</b><small id="hRate"></small></div>
+      <div class="hstat"><span>Cap Breakers</span><b id="hBreakers">0</b></div>
       <div class="controls">
         <div class="seg" id="speedSeg"></div>
         <button id="pauseBtn">Pause</button>
@@ -171,7 +174,6 @@
     </div>
   </div>
 
-  <script type="module" src="main.js"></script>
-<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/v4bc70e2c01a94c73b74392e4234840661791215815920" integrity="sha512-L0ha0OXavK/8okipN9F8BtP84dg9DUhPERbBXzwI6dgTA55d2+yweo3pn5CSFYs45/r8md2+xvUPtTdvTNRfjA==" data-cf-beacon='{"version":"2024.11.0","token":"1954b47c125f43f8b4338b3c4f804e4f","spa":2}' crossorigin="anonymous"></script>
-<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a4926128bbda563a',t:'MTc5MTc2OTA0OA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+  <script type="module" src="src/main.js"></script>
+</body>
 </html>

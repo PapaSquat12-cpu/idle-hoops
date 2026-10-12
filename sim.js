@@ -4,7 +4,7 @@
 import { POSITIONS } from './data.js';
 
 const POSSESSIONS = 100;   // possessions per team per game (4 quarters x 25)
-const REB_POS = { PG: 1.0, SG: 0.9, SF: 1.0, PF: 1.2, C: 1.3 };
+const REB_POS = { PG: 0.4, SG: 0.55, SF: 0.85, PF: 1.15, C: 1.3 };
 const CYCLE_MIN = 0.48;    // game minutes per possession cycle (48 / 100)
 
 export const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
@@ -100,7 +100,7 @@ export function simulateGame(o) {
         push(i, 'bench', '{m} scores while you\'re on the bench.');
       } else push(i, 'bench', '{m} misses on the bench.');
     } else {
-      const usage = clamp(0.16 + ((r.handle + r.iq + r.inside + r.three + r.mid) / 5 - 50) / 250, 0.12, 0.42);
+      const usage = clamp(0.16 + ((r.handle + r.iq + r.inside + r.three + r.mid) / 5 - 50) / 250, 0.12, 0.36);
       if (!chance(usage)) {
         // Teammate-led possession with you on the floor
         const mp = clamp(0.47 + (ownQ - oppQ) / 250 + (ovr - ownQ) / 1200 + (r.pass - 50) / 1000, 0.3, 0.7);
@@ -127,7 +127,7 @@ export function simulateGame(o) {
           let p = type === 'three' ? 0.20 + r.three / 400
                 : type === 'mid' ? 0.25 + r.mid / 420
                 : 0.34 + r.inside / 380;
-          p -= (oppQ - 55) / 300;
+          p -= (oppQ - 55) / 300 + 0.03;
           if (clutchTime) p += (r.clutch - 50) / 500;
           p = clamp(p, 0.1, 0.85);
 
@@ -169,7 +169,7 @@ export function simulateGame(o) {
     if (on) oMake -= (defComp - 50) / 500;
     oMake = clamp(oMake, 0.2, 0.75);
 
-    if (on && chance(0.002 + r.steal / 1800)) {
+    if (on && chance(0.0005 + 0.035 * Math.pow(r.steal / 100, 2.5))) {
       box.stl++;
       push(i, 'key', pick(T.steal));
       continue;

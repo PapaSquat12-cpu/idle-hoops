@@ -1,7 +1,7 @@
 // ===== UI controller, game loop, save/load =====
 import {
   POSITIONS, ARCHETYPES, RATINGS, CATEGORIES, LEAGUES, CONTRACTS, SEASON_GAMES,
-  FIRST_NAMES, LAST_NAMES, AD_SPONSORS, ADS, TRAINING, MAX_RATING, LEGACY_RATING_BONUS, LEGACY_EARN_BONUS,
+  FIRST_NAMES, LAST_NAMES, AD_SPONSORS, ADS, TRAINING, MAX_RATING, LEGACY_RATING_BONUS, LEGACY_EARN_BONUS, AWAY_EARN_MULT, BODY,
 } from './data.js';
 import { simulateGame } from './sim.js';
 import * as E from './engine.js';
@@ -11,10 +11,11 @@ const GAME_MS = 20000;          // real time for one game at 1x while you are wa
 const SPEEDS = [1, 2, 4];       // playback speeds while watching
 const AWAY_PACE = 0.5;          // games run at half pace when the tab is hidden or you've been idle
 const OFFLINE_GAME_MS = GAME_MS / AWAY_PACE;          // one game per 40s while the page is closed
-const MAX_OFFLINE_MS = 12 * 60 * 60 * 1000;           // offline progress cap: 12 hours
+const MAX_OFFLINE_MS = 6 * 60 * 60 * 1000;            // offline progress cap: 6 hours
 const IDLE_MS = 90000;          // no interaction for this long = away
 
 const $ = (s) => document.querySelector(s);
+const RATING_NAME = Object.fromEntries(RATINGS.map((r) => [r.id, r.name]));
 const h = (tag, cls, html) => { const n = document.createElement(tag); if (cls) n.className = cls; if (html != null) n.innerHTML = html; return n; };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -35,6 +36,7 @@ let state = null;
 const ui = {
   speed: 1, paused: false, buy: 1, game: null, lastActive: Date.now(),
   createPos: 'PG', createArch: null,
+  body: null,
   trainRaf: null, trainStart: 0, trainCdUntil: 0,
   ad: null, nextAdAt: 0, feedCount: 0, rowEls: {},
 };
@@ -86,12 +88,13 @@ function showGame() {
 
 // ================= CREATE =================
 function renderCreate() {
+  ui.body = E.clampBody(ui.body || E.bodyMid(ui.createPos), ui.createPos);
   const tabs = $('#posTabs');
   tabs.innerHTML = '';
   for (const p of POSITIONS) {
     const b = h('button', ui.createPos === p.id ? 'on' : '', p.id);
     b.title = p.name;
-    b.onclick = () => { ui.createPos = p.id; ui.createArch = null; renderCreate(); };
+    b.onclick = () => { ui.createPos = p.id; ui.createArch = null; ui.body = null; renderCreate(); };
     tabs.appendChild(b);
   }
   const pos = POSITIONS.find((p) => p.id === ui.createPos);
@@ -100,22 +103,62 @@ function renderCreate() {
   const list = E.archetypesFor(ui.createPos);
   if (!ui.createArch || !list.some((a) => a.id === ui.createArch)) ui.createArch = list[0].id;
   $('#archCount').textContent = `${list.length} archetypes`;
+  renderArchGrid();
+  renderBodyCard();
+  renderArchDetail(ui.createArch, ui.createPos);
+}
 
+function renderArchGrid() {
+  const list = E.archetypesFor(ui.createPos);
   const grid = $('#archGrid');
   grid.innerHTML = '';
   for (const a of list) {
-    const ovr = E.computeOverall(E.startingRatings(a.id, 0), ui.createPos);
+    const ovr = E.computeOverall(E.startingRatings(a.id, 0, ui.body), ui.createPos);
     const card = h('button', 'arch' + (a.id === ui.createArch ? ' on' : ''));
     card.innerHTML = `<b>${a.name}</b><p>${a.desc}</p><div class="chips"><span class="chip">Start OVR ${ovr}</span></div>`;
     card.onclick = () => { ui.createArch = a.id; renderCreate(); };
     grid.appendChild(card);
   }
-  renderArchDetail(ui.createArch, ui.createPos);
+}
+
+const fmtHeight = (inches) => `${Math.floor(inches / 12)}'${inches % 12}"`;
+
+function renderBodyCard() {
+  const b = ui.body;
+  const r = E.bodyRange(ui.createPos);
+  $('#bodyCard').innerHTML = `
+    <div class="cardhead">3. Height &amp; Weight</div>
+    <p class="muted small">Range for ${ui.createPos}: ${fmtHeight(r.height.min)}–${fmtHeight(r.height.max)}, ${r.weight.min}–${r.weight.max} lb. Your build sets starting ratings and a few rating caps.</p>
+    <label class="slider-row"><span>Height</span><b id="bHeight">${fmtHeight(b.height)}</b>
+      <input type="range" id="bHeightIn" min="${r.height.min}" max="${r.height.max}" step="1" value="${b.height}"></label>
+    <label class="slider-row"><span>Weight</span><b id="bWeight">${b.weight} lb</b>
+      <input type="range" id="bWeightIn" min="${r.weight.min}" max="${r.weight.max}" step="5" value="${b.weight}"></label>
+    <div id="bodyFx" class="chips" style="margin-top:8px"></div>`;
+  const onChange = () => {
+    ui.body = { height: Number($('#bHeightIn').value), weight: Number($('#bWeightIn').value) };
+    $('#bHeight').textContent = fmtHeight(ui.body.height);
+    $('#bWeight').textContent = `${ui.body.weight} lb`;
+    renderBodyFx();
+    renderArchGrid();
+    renderArchDetail(ui.createArch, ui.createPos);
+  };
+  $('#bHeightIn').oninput = onChange;
+  $('#bWeightIn').oninput = onChange;
+  renderBodyFx();
+}
+
+function renderBodyFx() {
+  const fx = E.bodyEffects(ui.body, ui.createPos);
+  const parts = [
+    ...fx.shifts.map((s) => `<span class="chip ${s.delta > 0 ? 'up' : 'pricey'}">${s.name} ${s.delta > 0 ? '+' : ''}${s.delta}</span>`),
+    ...fx.caps.map((c) => `<span class="chip cheap">${c.name} cap +${c.bonus}</span>`),
+  ];
+  $('#bodyFx').innerHTML = parts.length ? parts.join('') : '<span class="muted small">Average build: no rating shifts.</span>';
 }
 
 function renderArchDetail(archId, pos) {
   const a = E.ARCH_BY_ID[archId];
-  const start = E.startingRatings(archId, 0);
+  const start = E.startingRatings(archId, 0, ui.body);
   const boosts = Object.entries(a.boosts).sort((x, y) => y[1] - x[1]);
   const cheap = Object.entries(a.cost).filter(([, m]) => m < 1).map(([c, m]) => `${c} -${Math.round((1 - m) * 100)}%`);
   const pricey = Object.entries(a.cost).filter(([, m]) => m > 1).map(([c, m]) => `${c} +${Math.round((m - 1) * 100)}%`);
@@ -141,7 +184,7 @@ function renderArchDetail(archId, pos) {
 function startCareer() {
   const nameIn = $('#pname').value.trim();
   const name = nameIn || `${pick(FIRST_NAMES)} ${pick(LAST_NAMES)}`;
-  state = E.newCareer({ name, pos: ui.createPos, archId: ui.createArch });
+  state = E.newCareer({ name, pos: ui.createPos, archId: ui.createArch, body: E.clampBody(ui.body, ui.createPos) });
   ui.game = null; ui.feedCount = 0;
   $('#feed').innerHTML = '';
   $('#lastGame').innerHTML = `<div class="cardhead">Last Game</div><div class="muted">No games yet. Your first tip-off is coming up.</div>`;
@@ -176,7 +219,13 @@ function buildRatingRows() {
 
 function buyRating(id) {
   const amt = ui.buy === 'max' ? 9999 : ui.buy;
-  const got = E.upgrade(state, id, amt);
+  let got;
+  if (state.ratings[id] >= E.ratingCap(state, id)) {
+    got = E.breakCap(state, id) ? 1 : 0;
+    if (got) toast(`Cap Breaker used: ${RATING_NAME[id]} cap is now ${E.ratingCap(state, id)}`, false);
+  } else {
+    got = E.upgrade(state, id, amt);
+  }
   if (got > 0) {
     const row = ui.rowEls[id];
     row.classList.remove('flash'); void row.offsetWidth; row.classList.add('flash');
@@ -192,6 +241,7 @@ function renderRatings() {
     const row = ui.rowEls[r.id];
     if (!row) continue;
     const v = state.ratings[r.id];
+    const cap = E.ratingCap(state, r.id);
     const isCore = !!core[r.id];
     row.classList.toggle('core', isCore);
     row.querySelector('.star').textContent = isCore ? '★' : '';
@@ -199,19 +249,26 @@ function renderRatings() {
     row.querySelector('.val').textContent = v;
     const btn = row.querySelector('button');
     const costEl = row.querySelector('.cost');
-    if (v >= MAX_RATING) {
-      costEl.textContent = 'MAX';
-      btn.textContent = '—';
-      btn.disabled = true;
+    if (v >= cap) {
+      if (cap >= MAX_RATING) {
+        costEl.textContent = 'MAX';
+        btn.textContent = '—';
+        btn.disabled = true;
+      } else {
+        costEl.textContent = `Cap ${cap}`;
+        costEl.title = 'Capped. Spend a Cap Breaker to raise this cap by 5.';
+        btn.textContent = 'Break +5';
+        btn.disabled = state.capBreakers < 1;
+      }
       continue;
     }
     let n, total;
     if (ui.buy === 'max') {
-      ({ n, total } = E.maxAffordable(r.id, v, state.archId, state.coins, state.leagueIdx));
+      ({ n, total } = E.maxAffordable(r.id, v, state.archId, state.coins, state.leagueIdx, cap));
       btn.textContent = n > 0 ? `+${n}` : 'Max';
       btn.disabled = n === 0;
     } else {
-      ({ bought: n, total } = E.buyCost(r.id, v, state.archId, ui.buy, state.leagueIdx));
+      ({ bought: n, total } = E.buyCost(r.id, v, state.archId, ui.buy, state.leagueIdx, cap));
       btn.textContent = `+${n}`;
       btn.disabled = total > state.coins;
     }
@@ -244,11 +301,12 @@ function renderAll() {
   const perGame = E.gameEarnings({ overall: ovr, minutes, gs36: 15, leagueIdx: state.leagueIdx, ascensions: state.ascensions });
 
   $('#hName').textContent = state.name;
-  $('#hSub').textContent = `${state.pos} · ${arch.name}${state.ascensions ? ` · Ascension ${state.ascensions}` : ''}`;
+  $('#hSub').textContent = `${state.pos} · ${arch.name} · ${fmtHeight(state.body.height)}, ${state.body.weight} lb${state.ascensions ? ` · Ascension ${state.ascensions}` : ''}`;
   $('#hLeague').textContent = league.name;
   $('#hSeason').textContent = `${state.season} · G ${s.gp}/${SEASON_GAMES}`;
   $('#hRecord').textContent = `${s.w}-${s.l}`;
   $('#hCoins').textContent = fmt(state.coins);
+  $('#hBreakers').textContent = state.capBreakers;
   $('#hRate').textContent = `~${fmt(perGame)} / game`;
 
   const ovrEl = $('#ovr');
@@ -328,7 +386,7 @@ function applyOfflineProgress() {
   for (let i = 0; i < budget; i++) {
     if (E.canAscend(state)) { sum.pausedForAscend = true; break; }
     const { res } = simulateNext();
-    sum.coins += E.applyGame(state, res);
+    sum.coins += E.applyGame(state, res, AWAY_EARN_MULT);
     sum.games++;
     if (res.won) sum.wins++; else sum.losses++;
     if (state.seasonStats.gp >= SEASON_GAMES) {
@@ -398,7 +456,7 @@ const escapeHtml = (s) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&l
 
 function finishGame(instant) {
   const { res } = ui.game;
-  const earn = E.applyGame(state, res);
+  const earn = E.applyGame(state, res, isAway() ? AWAY_EARN_MULT : 1);
   const b = res.box;
   const s = state.seasonStats;
   const wl = res.won ? '<span class="win">WIN</span>' : '<span class="loss">LOSS</span>';
@@ -497,6 +555,7 @@ function finishDrill(forcedQuality, forcedMsg) {
     else { quality = 0.5; label = 'Sloppy'; }
   }
   const coins = E.trainingReward({ overall: E.overallOf(state), ratings: state.ratings, leagueIdx: state.leagueIdx, quality });
+  if (quality >= 2) { E.awardCapBreaker(state); toast('Perfect drill: +1 Cap Breaker', false); }
   state.coins += coins;
   state.career.training += coins;
   state.career.coinsEarned += coins;
@@ -557,7 +616,7 @@ function acceptAd() {
 // ================= ASCENSION & MENU =================
 function ascendPrompt() {
   const next = LEAGUES[state.leagueIdx + 1];
-  const curBase = E.startingRatings(state.archId, state.ascensions + 1);
+  const curBase = E.startingRatings(state.archId, state.ascensions + 1, state.body);
   const ovr = E.computeOverall(curBase, state.pos);
   openModal({
     title: `Ascend to the ${next.name}?`,

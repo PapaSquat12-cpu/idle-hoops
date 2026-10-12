@@ -257,3 +257,6 @@ input { font-size: 16px; }                          /* stops iOS zooming into th
   .team span { font-size: .72rem; line-height: 1.05; }
   .status { font-size: .72rem; }
 }
+
+.slider-row { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center; margin: 8px 0; font-size: .9rem; }
+.slider-row input { grid-column: 1 / -1; width: 100%; }
