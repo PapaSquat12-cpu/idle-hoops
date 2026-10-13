@@ -205,8 +205,14 @@ export function buyInvest(state, kind) {
   if (state.coins < cost) return false;
   state.coins -= cost;
   state.career.coinsSpent += cost;
-  state.invest = { agency: investLevel(state, 'agency'), trainer: investLevel(state, 'trainer'), [kind]: investLevel(state, kind) + 1 };
+  state.invest = { agency: investLevel(state, 'agency'), trainer: investLevel(state, 'trainer'), idle: investLevel(state, 'idle'), [kind]: investLevel(state, kind) + 1 };
   return true;
+}
+
+// Pace for away and offline games: 0.5x at level 0, +0.02 per level, capped at 1x
+export function awayPace(state) {
+  const I = INVEST.idle;
+  return Math.min(I.max, I.base + I.pace * investLevel(state, 'idle'));
 }
 
 // Timing divisors: gaps and cooldowns are divided by these
@@ -257,7 +263,7 @@ export function newCareer({ name, pos, archId, body }) {
     ratings: startingRatings(archId, 0, b),
     capBonus: {},
     capBreakers: 0,
-    invest: { agency: 0, trainer: 0 },
+    invest: { agency: 0, trainer: 0, idle: 0 },
     leagueIdx: 0,
     ascensions: 0,
     coins: 0,
@@ -395,62 +401,77 @@ export function clutchReward(state) {
 }
 
 // ---------- Daily objectives (reset at local midnight) ----------
-// Each category is an uncapped ladder. Tier n needs n qualifying actions counted since the previous tier was claimed.
-// Reaching a tier makes it "ready". The player must claim it before the next tier starts counting.
-export const DAILY_CATS = ['ads', 'drills', 'upgrades', 'stat'];
+// Each objective is an uncapped ladder. Tier n must be achieved and claimed before tier n+1 starts counting.
+// Count ladders (ads, drills, upgrades): n qualifying actions since the previous claim.
+// Stat ladders: one game that meets the current tier's threshold.
+export const COUNT_CATS = ['ads', 'drills', 'upgrades'];
+export const STAT_CATS = ['pts', 'ast', 'reb', 'def', 'tpm'];
 
 export function dayKey(d = new Date()) {
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
 }
 
-// Stat line chosen from the archetype's strongest boosted rating
-export function statObjective(archId) {
-  const top = Object.entries(ARCH_BY_ID[archId].boosts).sort((x, y) => y[1] - x[1])[0][0];
-  const map = {
-    three: 'tpm', ft: 'tpm',
-    handle: 'ast', pass: 'ast', vision: 'ast',
-    orb: 'reb', drb: 'reb',
-    block: 'stopped', steal: 'stopped', intD: 'stopped', perD: 'stopped',
-  };
-  const stat = map[top] || 'pts';
-  const t = DAILY.statTargets[stat];
-  const descs = {
-    tpm: `${t} threes in a game`,
-    ast: `${t} assists in a game`,
-    reb: `${t} rebounds in a game`,
-    stopped: `${t} steals + blocks in a game`,
-    pts: `${t} points in a game`,
-  };
-  return { stat, target: t, desc: descs[stat] };
+// Stat objectives an archetype gets: points for everyone, plus position and archetype specific ones
+export function statCatsFor(archId) {
+  const a = ARCH_BY_ID[archId];
+  const b = a.boosts || {};
+  const cats = ['pts'];
+  if (a.pos === 'C' || a.pos === 'PF' || (b.orb || 0) >= 10 || (b.drb || 0) >= 10) cats.push('reb');
+  if ((b.pass || 0) >= 12 || (b.vision || 0) >= 12) cats.push('ast');
+  if ((b.three || 0) >= 12) cats.push('tpm');
+  if ((b.steal || 0) >= 10 || (b.block || 0) >= 10) cats.push('def');
+  return cats;
+}
+
+// Defensive objective: blocks for interior archetypes, steals for perimeter ones
+export function defKind(archId) {
+  const b = ARCH_BY_ID[archId].boosts || {};
+  return (b.block || 0) > (b.steal || 0) ? 'block' : 'steal';
+}
+
+export function statThreshold(cat, tier) {
+  const L = DAILY.statLadders[cat];
+  return L[Math.min(tier - 1, L.length - 1)];
 }
 
 function plural(n, word) { return `${n} ${word}${n === 1 ? '' : 's'}`; }
 
 export function tierLabel(state, cat, n) {
-  switch (cat) {
-    case 'ads': return `Accept ${plural(n, 'sponsor offer')}`;
-    case 'drills': return `Finish ${plural(n, 'training drill')}`;
-    case 'upgrades': return `Buy ${plural(n, 'rating point')}`;
-    case 'stat': return `Stat line: ${statObjective(state.archId).desc} (×${n})`;
-  }
-  return cat;
+  if (cat === 'ads') return `Accept ${plural(n, 'sponsor offer')}`;
+  if (cat === 'drills') return `Finish ${plural(n, 'training drill')}`;
+  if (cat === 'upgrades') return `Buy ${plural(n, 'rating point')}`;
+  const L = DAILY.statLadders[cat];
+  const t = statThreshold(cat, n);
+  const rep = n > L.length ? ` (x${n - L.length + 1})` : '';
+  const text = {
+    pts: `Score ${t} points in a game`,
+    ast: `Record ${t} assists in a game`,
+    reb: `Grab ${t} rebounds in a game`,
+    tpm: `Make ${t} threes in a game`,
+    def: defKind(state.archId) === 'block' ? `Block ${t} shots in a game` : `Get ${t} steals in a game`,
+  }[cat];
+  return text + rep;
 }
 
 export function ensureDaily(state) {
   const key = dayKey();
-  if (!state.daily || state.daily.day !== key || state.daily.v !== 3) {
+  if (!state.daily || state.daily.day !== key || state.daily.v !== 4) {
     const per = () => ({ tier: 1, prog: 0, ready: false });
-    state.daily = { v: 3, day: key, cats: { ads: per(), drills: per(), upgrades: per(), stat: per() }, claimed: 0 };
+    const cats = {};
+    for (const id of [...COUNT_CATS, ...STAT_CATS]) cats[id] = per();
+    state.daily = { v: 4, day: key, cats, claimed: 0 };
   }
   return state.daily;
 }
 
-// Current objective per category
+// Current objective per applicable category
 export function dailyObjectives(state) {
   const d = ensureDaily(state);
-  return DAILY_CATS.map((id) => {
+  const ids = [...COUNT_CATS, ...statCatsFor(state.archId)];
+  return ids.map((id) => {
     const c = d.cats[id];
-    return { id, target: c.tier, progress: c.prog, ready: c.ready, label: tierLabel(state, id, c.tier) };
+    const isStat = STAT_CATS.includes(id);
+    return { id, target: isStat ? 1 : c.tier, progress: c.prog, ready: c.ready, label: tierLabel(state, id, c.tier) };
   });
 }
 
@@ -464,20 +485,30 @@ export function dailyPayout(state, claimedToday) {
 export function recordDaily(state, event, value = 1) {
   const d = ensureDaily(state);
   const ready = [];
+  const markReady = (id) => {
+    const c = d.cats[id];
+    c.ready = true;
+    ready.push({ id, label: tierLabel(state, id, c.tier) });
+  };
   const add = (id, amount) => {
     const c = d.cats[id];
     if (c.ready) return;                       // must claim before the next tier counts
     c.prog = Math.min(c.tier, c.prog + amount);
-    if (c.prog >= c.tier) { c.ready = true; ready.push({ id, label: tierLabel(state, id, c.tier) }); }
+    if (c.prog >= c.tier) markReady(id);
   };
   if (event === 'ad') add('ads', 1);
   else if (event === 'drill') add('drills', 1);
   else if (event === 'upgrade') add('upgrades', value);
   else if (event === 'game') {
-    const so = statObjective(state.archId);
     const b = value.box;
-    const metric = { tpm: b.tpm, ast: b.ast, reb: b.orb + b.drb, stopped: b.stl + b.blk, pts: b.pts }[so.stat];
-    if (metric >= so.target) add('stat', 1);
+    const metric = {
+      pts: b.pts, ast: b.ast, reb: b.orb + b.drb, tpm: b.tpm,
+      def: defKind(state.archId) === 'block' ? b.blk : b.stl,
+    };
+    for (const id of statCatsFor(state.archId)) {
+      const c = ensureDaily(state).cats[id];
+      if (!c.ready && metric[id] >= statThreshold(id, c.tier)) markReady(id);
+    }
   }
   return ready;
 }
@@ -502,7 +533,7 @@ export function deserialize(str) {
   s.capBonus = s.capBonus || {};
   s.body = clampBody(s.body, s.pos);
   s.capBreakers = s.capBreakers || 0;
-  s.invest = s.invest || { agency: 0, trainer: 0 };
+  s.invest = { agency: 0, trainer: 0, idle: 0, ...(s.invest || {}) };
   s.career.breakers = s.career.breakers || 0;
   return s;
 }

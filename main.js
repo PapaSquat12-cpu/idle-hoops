@@ -9,9 +9,7 @@ import * as E from './engine.js';
 const SAVE_KEY = 'idle-hoops-career-v2';
 const GAME_MS = 20000;          // real time for one game at 1x while you are watching
 const SPEEDS = [1, 2, 4];       // playback speeds while watching
-const AWAY_PACE = 0.5;          // games run at half pace when the tab is hidden or you've been idle
-const OFFLINE_GAME_MS = GAME_MS / AWAY_PACE;          // one game per 40s while the page is closed
-const MAX_OFFLINE_MS = 6 * 60 * 60 * 1000;            // offline progress cap: 6 hours
+const MAX_OFFLINE_MS = 24 * 60 * 60 * 1000;           // away-time earnings cap: 24 hours
 const IDLE_MS = 90000;          // no interaction for this long = away
 
 const $ = (s) => document.querySelector(s);
@@ -363,7 +361,7 @@ function renderAll() {
 
   $('#pauseBtn').textContent = ui.paused ? 'Resume' : 'Pause';
   const away = isAway();
-  $('#paceBadge').textContent = away ? `Away · ${AWAY_PACE}x pace` : `Watching · ${effectiveSpeed()}x`;
+  $('#paceBadge').textContent = away ? `Away · ${Number(E.awayPace(state).toFixed(2))}x pace` : `Watching · ${effectiveSpeed()}x`;
   $('#paceBadge').className = 'pace ' + (away ? 'away' : 'watch');
   renderRatings();
 }
@@ -386,9 +384,10 @@ function simulateNext() {
 function applyOfflineProgress() {
   const elapsed = Date.now() - (state.savedAt || Date.now());
   if (elapsed < 60000) return null;
-  const maxGames = Math.floor(MAX_OFFLINE_MS / OFFLINE_GAME_MS);
-  const budget = Math.min(Math.floor(elapsed / OFFLINE_GAME_MS), maxGames);
-  const sum = { elapsed, capped: elapsed / OFFLINE_GAME_MS > maxGames, games: 0, wins: 0, losses: 0, seasons: 0, mvps: 0, coins: 0, pausedForAscend: false, startLeague: LEAGUES[state.leagueIdx].name };
+  const gameMs = GAME_MS / E.awayPace(state);          // one game every gameMs while the page is closed
+  const maxGames = Math.floor(MAX_OFFLINE_MS / gameMs);
+  const budget = Math.min(Math.floor(elapsed / gameMs), maxGames);
+  const sum = { elapsed, gameMs, capped: elapsed / gameMs > maxGames, games: 0, wins: 0, losses: 0, seasons: 0, mvps: 0, coins: 0, pausedForAscend: false, startLeague: LEAGUES[state.leagueIdx].name };
   for (let i = 0; i < budget; i++) {
     if (E.canAscend(state)) { sum.pausedForAscend = true; break; }
     const { res } = simulateNext();
@@ -416,7 +415,7 @@ function formatDuration(ms) {
 function showOfflineSummary(sum) {
   openModal({
     title: 'While you were away',
-    body: `<p>You were away for <b>${formatDuration(sum.elapsed)}</b>. Games ran at away pace (one every ${Math.round(OFFLINE_GAME_MS / 1000)}s).</p>
+    body: `<p>You were away for <b>${formatDuration(sum.elapsed)}</b>. Games ran at away pace (one every ${Math.round(sum.gameMs / 1000)}s at ${Number(E.awayPace(state).toFixed(2))}x).</p>
       <ul>
         <li>Games played: <b>${sum.games}</b> (${sum.wins}-${sum.losses})</li>
         <li>Seasons completed: <b>${sum.seasons}</b>${sum.mvps ? `, MVPs: <b>${sum.mvps}</b>` : ''}</li>
@@ -502,7 +501,7 @@ function endSeason() {
 
 function markActive() { ui.lastActive = Date.now(); }
 function isAway() { return document.hidden || Date.now() - ui.lastActive > IDLE_MS; }
-function effectiveSpeed() { return isAway() ? AWAY_PACE : ui.speed; }
+function effectiveSpeed() { return isAway() ? E.awayPace(state) : ui.speed; }
 
 async function mainLoop() {
   while (true) {
@@ -750,7 +749,8 @@ function renderInvest() {
   };
   setHTML(el, `
     ${row('agency', 'Agency', (l) => `+${Math.round(INVEST.agency.payMult * l * 100)}% ad pay · +${Math.round(INVEST.agency.speed * l * 100)}% offers`)}
-    ${row('trainer', 'Trainer', (l) => `+${Math.round(INVEST.trainer.payMult * l * 100)}% drill pay · +${Math.round(INVEST.trainer.speed * l * 100)}% speed`)}`);
+    ${row('trainer', 'Trainer', (l) => `+${Math.round(INVEST.trainer.payMult * l * 100)}% drill pay · +${Math.round(INVEST.trainer.speed * l * 100)}% speed`)}
+    ${row('idle', 'Away Speed', (l) => `Idle games at ${Number(Math.min(INVEST.idle.max, INVEST.idle.base + INVEST.idle.pace * l).toFixed(2))}x`)}`);
 }
 
 function bindInvest() {

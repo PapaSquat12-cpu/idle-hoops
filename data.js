@@ -205,6 +205,7 @@ export const INVEST = {
   costExp: 2,                                                  // level n+1 costs gamesBase x typical game pay x (n+1)^2
   agency:  { gamesBase: 15, payMult: 0.35, speed: 0.06 },     // ads: +35% pay per level; gap between offers divided by (1 + 0.06 x level)
   trainer: { gamesBase: 12, payMult: 0.30, speed: 0.06 },     // drills: +30% pay per level; cooldown divided by (1 + 0.06 x level)
+  idle:    { gamesBase: 8, base: 0.5, max: 1, pace: 0.02 }, // away games: pace starts at 0.5x, +0.02 per level, capped at 1x
 };
 
 // Clutch time: in a close game entering Q4, one bonus per game. Scales with contract base and the Clutch rating.
@@ -216,10 +217,17 @@ export const CLUTCH = { rate: 0.4, closeMargin: 6 };
 export const DAILY = {
   rate: 0.4,
   step: 0.1,
-  statTargets: { tpm: 4, ast: 8, reb: 10, stopped: 4, pts: 25 },
+  // Stat ladders: tier n uses entry n (the last entry repeats). One qualifying game per tier.
+  statLadders: {
+    pts: [10, 15, 20, 25, 30, 35, 40, 45, 50],
+    ast: [5, 8, 10, 12, 15, 20, 25],
+    reb: [5, 10, 15, 20, 25, 30],
+    def: [2, 3, 4, 5, 6, 7, 8, 9, 10],   // steals or blocks, per archetype
+    tpm: [2, 3, 4, 5, 6, 7, 8],
+  },
 };
 
-export const AWAY_EARN_MULT = 0.5;    // games played while away (tab hidden, idle, or offline) pay half
+export const AWAY_EARN_MULT = 1;      // games played while away (tab hidden, idle, or offline) pay full; they run at 0.5x pace (AWAY_PACE)
 export const AD_SPONSORS = ['Hoopline Sneakers', 'Turbo Energy Drink', 'Metro Auto Group', 'Court Cola', 'Skyline Bank', 'Glide Razors', 'Pulse Wearables', 'Orbit Airlines'];
 
 export const FIRST_NAMES = ['Marcus', 'Jaylen', 'Devin', 'Tre', 'Kobe', 'Malik', 'Trey', 'Andre', 'Cam', 'Dorian', 'Jalen', 'Zion'];
