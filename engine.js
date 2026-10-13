@@ -236,15 +236,27 @@ export function investLevel(state, kind) {
 }
 
 // Pay for a typical game at the current contract, league, and ascension
+// A starting player's pay: the reference for investment prices and side payouts (Overall 50, first league)
+export function starterPay() {
+  return payCurve(START_OVERALL);
+}
+
 export function typicalGamePay(state) {
   const ovr = overallOf(state);
   return gameEarnings({ overall: ovr, minutes: playMinutes(state), gs36: 15, leagueIdx: state.leagueIdx, ascensions: state.ascensions });
 }
 
-// Cost of the next level: a number of typical games' pay, growing with (level+1)^costExp
+// Cost of the next level. Sponsor and drill levels cost paybackPayouts x the payout they add at the new level.
+// Away Speed costs paybackHours x the extra away pay per hour that the next level adds.
 export function investCost(state, kind) {
   const next = investLevel(state, kind) + 1;
-  return Math.round(INVEST[kind].gamesBase * typicalGamePay(state) * Math.pow(next, INVEST.costExp));
+  if (kind === 'idle') {
+    const extraPerHour = INVEST.idle.pace * (3600 / INVEST.idle.gameSec) * typicalGamePay(state);
+    return Math.max(1, Math.round(INVEST.idle.paybackHours * extraPerHour * Math.pow(1 + INVEST.idle.costGrowth, next - 1)));
+  }
+  const I = INVEST[kind];
+  const rate = kind === 'agency' ? SIDE_RATE.ad : SIDE_RATE.drill;
+  return Math.max(1, Math.round(I.paybackPayouts * sideBase(state) * rate * Math.pow(1 + I.payMult, next)));
 }
 
 export function buyInvest(state, kind) {
@@ -257,7 +269,7 @@ export function buyInvest(state, kind) {
   return true;
 }
 
-// Pace for away and offline games: 0.5x at level 0, +0.02 per level, capped at 1x
+// Pace for away and offline games: 0.5x at level 0, +0.01 per level, capped at 1x
 export function awayPace(state) {
   const I = INVEST.idle;
   return Math.min(I.max, I.base + I.pace * investLevel(state, 'idle'));
@@ -287,17 +299,19 @@ function contractBase(state) {
   return contractFor(overallOf(state)).base;
 }
 
+// Base for sponsor and drill payouts: a starting player's pay in the current league
+export function sideBase(state) {
+  return starterPay() * LEAGUES[state.leagueIdx].coinMult;
+}
+
+// Sponsor payout per ad: compounds x(1 + payMult) per level
 export function adReward(state) {
-  const league = LEAGUES[state.leagueIdx];
-  return Math.round(contractBase(state) * SIDE_RATE.ad * league.coinMult
-    * (1 + INVEST.agency.payMult * investLevel(state, 'agency')));
+  return Math.round(sideBase(state) * SIDE_RATE.ad * Math.pow(1 + INVEST.agency.payMult, investLevel(state, 'agency')));
 }
 
 // quality: 0.5 (sloppy) to 2 (perfect)
 export function trainingReward(state, quality) {
-  const league = LEAGUES[state.leagueIdx];
-  return Math.round(contractBase(state) * SIDE_RATE.drill * league.coinMult
-    * (1 + INVEST.trainer.payMult * investLevel(state, 'trainer')) * quality);
+  return Math.round(sideBase(state) * SIDE_RATE.drill * Math.pow(1 + INVEST.trainer.payMult, investLevel(state, 'trainer')) * quality);
 }
 
 export const emptySeason = () => ({ gp: 0, w: 0, l: 0, min: 0, gsSum: 0, pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0, fgm: 0, fga: 0, tpm: 0, tpa: 0 });
@@ -375,9 +389,7 @@ export function ascend(state) {
 }
 
 // ---------- Season & MVP ----------
-// Expected best-of-15 rival Game Score per 36 (approx. mu + 1.74 sd), used for the MVP benchmark
 // MVP rivals: the top of 15 draws, centered at MVP_RIVAL.mean x the archetype's bar, with spread MVP_RIVAL.sd x bar
-export const RIVAL_SD = 2.5;
 // MVP bar for this archetype in this league: season-style Game Score per 36 of an Overall-97 build of the archetype
 export function mvpBenchmark(state) {
   return MVP_BARS[state.archId][state.leagueIdx];

@@ -746,8 +746,8 @@ function renderInvest() {
       </div>`;
   };
   setHTML(el, `
-    ${row('agency', 'Agency', (l) => `+${Math.round(INVEST.agency.payMult * l * 100)}% ad pay · +${Math.round(INVEST.agency.speed * l * 100)}% offers`)}
-    ${row('trainer', 'Trainer', (l) => `+${Math.round(INVEST.trainer.payMult * l * 100)}% drill pay · +${Math.round(INVEST.trainer.speed * l * 100)}% speed`)}
+    ${row('agency', 'Agency', (l) => `+${Math.round((Math.pow(1 + INVEST.agency.payMult, l) - 1) * 100)}% ad pay · +${Math.round(INVEST.agency.speed * l * 100)}% offers`)}
+    ${row('trainer', 'Trainer', (l) => `+${Math.round((Math.pow(1 + INVEST.trainer.payMult, l) - 1) * 100)}% drill pay · +${Math.round(INVEST.trainer.speed * l * 100)}% speed`)}
     ${row('idle', 'Away Speed', (l) => `Idle games at ${Number(Math.min(INVEST.idle.max, INVEST.idle.base + INVEST.idle.pace * l).toFixed(2))}x`)}`);
 }
 

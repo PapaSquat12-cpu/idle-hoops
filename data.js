@@ -218,13 +218,13 @@ export const ADS = { minGapSec: 40, maxGapSec: 80, windowSec: 20, rate: 0.4 };
 export const SIDE_FLOOR = 40;   // Overall where contract-based side income starts
 export const SIDE_RATE = { ad: 0.25, drill: 0.10 };   // fraction of contract base per payout
 
-// Investments are bought with coins and have no level cap. Payouts grow linearly per level,
-// and timing gains use a fraction that never reaches zero. Levels carry over through ascension.
+// Investments are bought with coins and have no level cap. Each level of sponsor or drill pay compounds,
+// and its cost is paybackPayouts times the payout it adds at the new level, so every level pays back in
+// the same number of ads/drills in any league. Away Speed's cost is paybackHours of the extra away pay it adds.
 export const INVEST = {
-  costExp: 2,                                                  // level n+1 costs gamesBase x typical game pay x (n+1)^2
-  agency:  { gamesBase: 15, payMult: 0.35, speed: 0.06 },     // ads: +35% pay per level; gap between offers divided by (1 + 0.06 x level)
-  trainer: { gamesBase: 12, payMult: 0.30, speed: 0.06 },     // drills: +30% pay per level; cooldown divided by (1 + 0.06 x level)
-  idle:    { gamesBase: 8, base: 0.5, max: 1, pace: 0.02 }, // away games: pace starts at 0.5x, +0.02 per level, capped at 1x
+  agency:  { payMult: 0.35, speed: 0.06, paybackPayouts: 60 },   // ads: payout x1.35 per level; offer gap divided by (1 + 0.06 x level)
+  trainer: { payMult: 0.30, speed: 0.06, paybackPayouts: 60 },   // drills: payout x1.30 per level; cooldown divided by (1 + 0.06 x level)
+  idle:    { base: 0.5, max: 1, pace: 0.01, paybackHours: 1, gameSec: 20, costGrowth: 0.15 }, // away games: pace starts at 0.5x, +0.01 per level, capped at 1x
 };
 
 // Clutch time: in a close game entering Q4, one bonus per game. Scales with contract base and the Clutch rating.
