@@ -1,7 +1,7 @@
 // ===== UI controller, game loop, save/load =====
 import {
   POSITIONS, ARCHETYPES, RATINGS, CATEGORIES, LEAGUES, CONTRACTS, SEASON_GAMES,
-  FIRST_NAMES, LAST_NAMES, AD_SPONSORS, ADS, TRAINING, MAX_RATING, LEGACY_RATING_BONUS, LEGACY_EARN_BONUS, AWAY_EARN_MULT, BODY, INVEST, CLUTCH, DAILY,
+  FIRST_NAMES, LAST_NAMES, AD_SPONSORS, ADS, TRAINING, MAX_RATING, START_OVERALL, OVERALL_PER_ASCENSION, PAY, AWAY_EARN_MULT, BODY, INVEST, CLUTCH, DAILY,
 } from './data.js';
 import { simulateGame } from './sim.js';
 import * as E from './engine.js';
@@ -23,6 +23,8 @@ const rand = (a, b) => a + Math.random() * (b - a);
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
 const SUF = ['', 'K', 'M', 'B', 'T', 'Qa', 'Qi', 'Sx', 'Sp', 'Oc', 'No', 'Dc'];
+const multStr = (x) => (x < 1000 ? x.toFixed(2) : fmt(x));
+
 function fmt(n) {
   n = Math.floor(n);
   if (n < 1000) return String(n);
@@ -250,24 +252,23 @@ function renderRatings() {
       btn.disabled = true;
       continue;
     }
-    // Plan the purchase, including Cap Breakers for points beyond the cap
+    // Plan the purchase, stopping at the rating cap for this league
     const plan = E.planUpgrade(state, r.id, ui.buy === 'max' ? 9999 : ui.buy);
     if (plan.n === 0) {
       if (v >= cap) {
         costEl.textContent = `Cap ${cap}`;
-        costEl.title = 'Capped. Each point above the cap costs a Cap Breaker plus its coin price.';
-        btn.textContent = state.capBreakers > 0 ? '+1 ◆' : 'Capped';
-        btn.disabled = state.capBreakers < 1 || state.coins < E.pointCost(r.id, v, state.archId, state.leagueIdx);
+        costEl.title = `Capped at ${cap} in this league. The cap rises with each ascension.`;
+        btn.textContent = 'Capped';
       } else {
         costEl.textContent = `${fmt(E.pointCost(r.id, v, state.archId, state.leagueIdx))}`;
         btn.textContent = ui.buy === 'max' ? 'Max' : '+0';
-        btn.disabled = true;
       }
+      btn.disabled = true;
     } else {
-      btn.textContent = plan.breakers > 0 ? `+${plan.n} ◆${plan.breakers}` : `+${plan.n}`;
+      btn.textContent = `+${plan.n}`;
       btn.disabled = false;
       costEl.textContent = `${fmt(plan.total)}`;
-      costEl.title = plan.breakers > 0 ? `Uses ${plan.breakers} Cap Breaker${plan.breakers > 1 ? 's' : ''} (◆)` : `Next point: ${fmt(E.pointCost(r.id, v, state.archId, state.leagueIdx))} coins`;
+      costEl.title = `Next point: ${fmt(E.pointCost(r.id, v, state.archId, state.leagueIdx))} coins`;
     }
   }
   document.querySelectorAll('#buySeg button').forEach((b) => b.classList.toggle('on', String(ui.buy) === b.dataset.buy));
@@ -293,7 +294,7 @@ function renderAll() {
   const league = LEAGUES[state.leagueIdx];
   const contract = E.contractFor(ovr);
   const next = E.nextContract(ovr);
-  const minutes = E.minutesFor(ovr);
+  const minutes = E.playMinutes(state);
   const s = state.seasonStats;
   const arch = E.ARCH_BY_ID[state.archId];
   const perGame = E.gameEarnings({ overall: ovr, minutes, gs36: 15, leagueIdx: state.leagueIdx, ascensions: state.ascensions });
@@ -304,13 +305,12 @@ function renderAll() {
   $('#hSeason').textContent = `${state.season} · G ${s.gp}/${SEASON_GAMES}`;
   $('#hRecord').textContent = `${s.w}-${s.l}`;
   $('#hCoins').textContent = fmt(state.coins);
-  $('#hBreakers').textContent = state.capBreakers;
   $('#careerInfo').innerHTML = `
     <div><span>Name</span><b>${state.name}</b></div>
     <div><span>Position</span><b>${state.pos} · ${E.ARCH_BY_ID[state.archId].name}</b></div>
     <div><span>League</span><b>${LEAGUES[state.leagueIdx].name}</b></div>
     <div><span>Ascensions</span><b>${state.ascensions}</b></div>
-    <div><span>Legacy bonus</span><b>+${Math.round(LEGACY_EARN_BONUS * state.ascensions * 100)}% pay</b></div>
+    <div><span>Starting Overall</span><b>${START_OVERALL + state.ascensions * OVERALL_PER_ASCENSION}</b></div>
     <div><span>Build</span><b>${fmtHeight(state.body.height)}, ${state.body.weight} lb</b></div>`;
   $('#hRate').textContent = `~${fmt(perGame)} / game`;
 
@@ -320,11 +320,11 @@ function renderAll() {
   $('#contractName').textContent = contract.name;
   $('#minTarget').textContent = `${f1(minutes)} min`;
   $('#nextContract').textContent = next ? `${next.name} at ${next.minOvr} OVR` : 'Top contract reached';
-  $('#legacy').textContent = state.ascensions ? `+${state.ascensions * LEGACY_RATING_BONUS} rating, +${Math.round(state.ascensions * LEGACY_EARN_BONUS * 100)}% pay` : 'None yet';
+  $('#legacy').textContent = state.ascensions ? `+${state.ascensions * OVERALL_PER_ASCENSION} starting Overall` : 'None yet';
 
-  const ovrOk = ovr >= 99, mvpOk = state.mvpThisLeague >= 1;
+  const ovrOk = ovr >= E.ASCEND_OVERALL, mvpOk = state.mvpThisLeague >= 1;
   $('#reqOvr').className = 'req' + (ovrOk ? ' done' : '');
-  $('#reqOvr').textContent = `Overall 99 (now ${ovr})`;
+  $('#reqOvr').textContent = `Overall ${E.ASCEND_OVERALL} (now ${ovr})`;
   $('#reqMvp').className = 'req' + (mvpOk ? ' done' : '');
   $('#reqMvp').textContent = mvpOk ? `League MVP won in ${league.name}` : `Win league MVP in ${league.name} (need best Game Score/36 in the league)`;
   const finalLeague = state.leagueIdx >= LEAGUES.length - 1;
@@ -338,12 +338,12 @@ function renderAll() {
     ['FG%', pct(s.fgm, s.fga)], ['3P%', pct(s.tpm, s.tpa)], ['MIN', f1(s.gp ? s.min / s.gp : 0)],
   ];
   $('#seasonGrid').innerHTML = grid.map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('');
-  const gsNow = s.min > 0 ? (s.gsSum / s.min) * 36 : 0;
+  const gsNow = s.gp > 0 ? s.gsSum / s.gp : 0;
   $('#gsNow').textContent = s.gp ? f1(gsNow) : '-';
-  $('#gsBench').textContent = f1(E.mvpBenchmark(state.leagueIdx));
+  $('#gsBench').textContent = f1(E.mvpBenchmark(state));
   const ls = state.lastSeason;
   $('#lastSeason').innerHTML = ls
-    ? `Last season (${ls.league}): ${ls.w}-${ls.l}, GS/36 ${f1(ls.playerGs36)} vs top rival ${f1(ls.topRival)}. ${ls.mvp ? '<span class="gain">League MVP!</span>' : 'No MVP.'}`
+    ? `Last season (${ls.league}): ${ls.w}-${ls.l}, GS/game ${f1(ls.playerGs)} vs top rival ${f1(ls.topRival)}. ${ls.mvp ? '<span class="gain">League MVP!</span>' : 'No MVP.'}`
     : 'First season in progress.';
 
   $('#careerGrid').innerHTML = [
@@ -355,7 +355,7 @@ function renderAll() {
 
   $('#ladder').innerHTML = CONTRACTS.map((c, i) => {
     const cls = i === contract.index ? 'on' : i < contract.index ? 'past' : '';
-    const pay = Math.round(c.base * Math.pow(league.coinMult, 1) * (1 + LEGACY_EARN_BONUS * state.ascensions));
+    const pay = Math.round(E.payCurve(c.minOvr) * league.coinMult);
     return `<div class="lad ${cls}"><span>${c.name} <small>(${c.minOvr}+)</small></span><span>${fmt(pay)}/g</span></div>`;
   }).join('');
 
@@ -374,7 +374,7 @@ function simulateNext() {
   const mate = pick(['Jordan', 'Chris', 'Reed', 'Tate', 'Lewis', 'Kane', 'Ibarra', 'Walsh']);
   const opponent = pick(league.teams);
   const res = simulateGame({
-    ratings: state.ratings, overall: ovr, pos: state.pos, minutes: E.minutesFor(ovr),
+    ratings: state.ratings, overall: ovr, pos: state.pos, minutes: E.playMinutes(state),
     league, opponent, name: state.name.split(' ').slice(-1)[0] || 'You', mate,
   });
   return { res, opponent };
@@ -573,7 +573,6 @@ function finishDrill(forcedQuality, forcedMsg) {
     else { quality = 0.5; label = 'Sloppy'; }
   }
   const coins = E.trainingReward(state, quality);
-  if (quality >= 2) { E.awardCapBreaker(state); toast('Perfect drill: +1 Cap Breaker', false); }
   state.coins += coins;
   state.career.training += coins;
   state.career.coinsEarned += coins;
@@ -643,13 +642,12 @@ function ascendPrompt() {
   const ovr = E.computeOverall(curBase, state.pos, state.archId);
   openModal({
     title: `Ascend to the ${next.name}?`,
-    body: `<p>You have reached 99 Overall and won league MVP. Time to move up.</p>
+    body: `<p>You have reached ${E.ASCEND_OVERALL} Overall and won league MVP. Time to move up.</p>
       <ul>
         <li>League: <b>${LEAGUES[state.leagueIdx].name}</b> → <b>${next.name}</b></li>
-        <li>Contract pay multiplier: <b>×${next.coinMult}</b> (up from ×${LEAGUES[state.leagueIdx].coinMult})</li>
-        <li>Coins reset to 0. Ratings reset to your archetype's base plus +${LEGACY_RATING_BONUS} legacy bonus.</li>
-        <li>Your new starting Overall will be about <b>${ovr}</b>.</li>
-        <li>Permanent legacy: +${Math.round(LEGACY_EARN_BONUS * 100)}% pay on every future game.</li>
+        <li>League pay multiplier: <b>×${multStr(next.coinMult)}</b> (up from ×${multStr(LEAGUES[state.leagueIdx].coinMult)})</li>
+        <li>Coins reset to 0. Ratings reset to a fixed starting Overall (+${OVERALL_PER_ASCENSION} per ascension).</li>
+        <li>Your new starting Overall will be <b>${ovr}</b>.</li>
       </ul>`,
     ok: 'Ascend', cancel: 'Not yet',
     onOk: () => {

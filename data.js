@@ -34,19 +34,26 @@ export const BODY = {
     { axis: 'w', dir: -1, at: 0.5, ratings: ['speed', 'handle'] },              // light
   ],
 };
-export const NON_BOOST_CAP = 80;      // ratings the archetype doesn't boost stop at this until you earn Cap Breakers
-export const CAP_BREAK_GS36 = 25;     // a game this strong (Game Score per 36) earns a Cap Breaker
+// Rating caps by league. Core ratings (and archetype boosts) can always reach 99, so Overall 99 is
+// reachable in league 1. Other ratings start at NON_BOOST_CAP and rise each league to 99 by the last league.
+export const NON_BOOST_CAP = 80;
 export const BASE_RATING = 45;      // every rating starts here before archetype boosts
 export const START_CAP = 85;        // archetype starting ratings never exceed this
 export const SEASON_GAMES = 82;
+// Stamina sets how much of your Overall-based minutes you can play: full minutes at STAMINA_FULL, proportional below.
+export const STAMINA_FULL = 90;
+export const MAX_MINUTES = 38;   // most minutes any player can play in a game
+// MVP rivals: best of 15 draws around mean x bar (spread sd x bar). Tuned with tests/mvp_odds.mjs
+// so a 97-Overall build of any archetype wins about 1 MVP every 3 to 11 seasons.
+export const MVP_RIVAL = { mean: 0.85, sd: 0.12 };
 export const RATING_TICK = 1;       // each purchase adds this much
 
 // Coin cost of one rating point: COST.base * catMult * leagueMult * growth^(value - offset)
-export const COST = { base: 25, growth: 1.075, offset: 20, leagueExp: 0.85, corePerWeight: 0.25 };
 
-// Legacy: each ascension adds this to every starting rating and this fraction to earnings
-export const LEGACY_RATING_BONUS = 2;
-export const LEGACY_EARN_BONUS = 0.05;
+// Starting Overall is the same for every archetype and body: START_OVERALL,
+// plus OVERALL_PER_ASCENSION for each ascension. Body effects are zero-sum on core ratings.
+export const START_OVERALL = 50;
+export const OVERALL_PER_ASCENSION = 1;
 
 export const CATEGORIES = ['Offense', 'Defense', 'Rebounding', 'Athletic', 'Mental'];
 
@@ -152,41 +159,53 @@ export const ARCHETYPES = [
   A('c-iq', 'C', 'Defensive Anchor', 'High-IQ rim defender who reads every play before it happens.', { iq: 18, intD: 18, block: 12, steal: 6, drb: 10 }, { Defense: 0.8, Mental: 0.9 }),
 ];
 
+// ----- Pay curve -----
+// Pay per game rises by the same factor for every Overall point and every league, so each
+// +1 Overall takes about the same time in all ten leagues. Overall runs 50 to 99 in each league
+// (index = 50 * league + (Overall - 50)). The endgame GOAT (league 9, Overall 99) pays PAY.endgame.
+export const PAY = { start: 30, endgame: 725000 };
+export const PAY_STEP = Math.pow(PAY.endgame / PAY.start, 1 / (50 * 9 + 49));
+export const leagueMult = (i) => Math.pow(PAY_STEP, 50 * i);
+
+// Coin cost of one rating point: COST.base * catMult * corePremium * leagueMult * growth^(value - offset)
+// growth and league use the pay step, so prices climb exactly as fast as pay.
+export const COST = { base: 90, growth: PAY_STEP, offset: START_OVERALL, leagueExp: 1, corePerWeight: 0.25 };
+
 export const LEAGUES = [
-  { id: 'gl', name: 'G League', coinMult: 1, teamOvr: 52, mvpMu: 21.0,
+  { id: 'gl', name: 'G League', coinMult: leagueMult(0), teamOvr: 52, mvpMu: 21.0,
     teams: ['Rio Grande Vipers', 'Motor City Rockers', 'Sioux Falls Storm', 'Westchester Wolves', 'Long Island Lightning', 'Salt Lake Summit', 'Birmingham Iron', 'Toronto Ridge'] },
-  { id: 'nba', name: 'NBA', coinMult: 6, teamOvr: 60, mvpMu: 19.5,
+  { id: 'nba', name: 'NBA', coinMult: leagueMult(1), teamOvr: 60, mvpMu: 19.5,
     teams: ['Boston Harbor', 'Chicago Forge', 'Denver Peaks', 'Miami Tide', 'Phoenix Mesa', 'Seattle Pines', 'Atlanta Crown', 'Dallas Mesa'] },
-  { id: 'euro', name: 'EuroLeague Elite', coinMult: 25, teamOvr: 66, mvpMu: 18.5,
+  { id: 'euro', name: 'EuroLeague Elite', coinMult: leagueMult(2), teamOvr: 66, mvpMu: 18.5,
     teams: ['Madrid Royals', 'Milan Bolts', 'Belgrade Eagles', 'Athens Titans', 'Istanbul Crescent', 'Munich Alpine', 'Paris Lumiere', 'Vilnius Storm'] },
-  { id: 'pac', name: 'Pacific Rim Pro', coinMult: 60, teamOvr: 69, mvpMu: 18.0,
+  { id: 'pac', name: 'Pacific Rim Pro', coinMult: leagueMult(3), teamOvr: 69, mvpMu: 18.0,
     teams: ['Kyoto Blaze', 'Melbourne Reef', 'Seoul Comets', 'Auckland Gales', 'Manila Typhoons', 'Osaka Ironclads', 'Perth Current', 'Taipei Dragons'] },
-  { id: 'world', name: 'World Superleague', coinMult: 90, teamOvr: 72, mvpMu: 17.5,
+  { id: 'world', name: 'World Superleague', coinMult: leagueMult(4), teamOvr: 72, mvpMu: 17.5,
     teams: ['Tokyo Thunder', 'Sydney Surge', 'Dubai Oasis', 'Lagos Kings', 'Rio Sol', 'Shanghai Dragons', 'Cairo Pyramids', 'Mumbai Monsoon'] },
-  { id: 'cont', name: 'Continental Crown', coinMult: 150, teamOvr: 74, mvpMu: 17.0,
+  { id: 'cont', name: 'Continental Crown', coinMult: leagueMult(5), teamOvr: 74, mvpMu: 17.0,
     teams: ['Andes Condors', 'Sahara Lions', 'Nordic Frost', 'Pacific Tide', 'Atlas Mountain', 'Caspian Wolves', 'Savanna Kings', 'Alpine Bears'] },
-  { id: 'olymp', name: 'Olympus Circuit', coinMult: 220, teamOvr: 76, mvpMu: 16.5,
+  { id: 'olymp', name: 'Olympus Circuit', coinMult: leagueMult(6), teamOvr: 76, mvpMu: 16.5,
     teams: ['Mount Athens', 'Thunder Peaks', 'Delphi Oracles', 'Pantheon Guard', 'Aegis Spartans', 'Ares Blades', 'Hermes Wings', 'Helios Suns'] },
-  { id: 'legend', name: 'Legends League', coinMult: 300, teamOvr: 78, mvpMu: 16.0,
+  { id: 'legend', name: 'Legends League', coinMult: leagueMult(7), teamOvr: 78, mvpMu: 16.0,
     teams: ['Olympus Gods', 'Eternal Flame', 'Titan Crown', 'Starfall Kings', 'Mythos Legends', 'Apex Immortals', 'Zenith Dynasty', 'Sovereign Stars'] },
-  { id: 'hall', name: 'Hall of Fame Circuit', coinMult: 500, teamOvr: 80, mvpMu: 15.5,
+  { id: 'hall', name: 'Hall of Fame Circuit', coinMult: leagueMult(8), teamOvr: 80, mvpMu: 15.5,
     teams: ['Springfield Legends', 'Canton Immortals', 'Cooperstown Greats', 'Naismith Aces', 'Hoops Pantheon', 'Retired Numbers', 'Rafter Kings', 'Cathedral Five'] },
-  { id: 'immortal', name: 'Immortal League', coinMult: 800, teamOvr: 82, mvpMu: 15.0,
+  { id: 'immortal', name: 'Immortal League', coinMult: leagueMult(9), teamOvr: 82, mvpMu: 15.0,
     teams: ['Eternal Throne', 'Celestial Hoops', 'Mythic Court', 'Timeless Crown', 'Ascendant Five', 'Infinite Rim', 'Legacy Prime', 'The Pantheon'] },
 ];
 
 // Contract tiers keyed by Overall. base = coins per game at 30 minutes in the G League.
 export const CONTRACTS = [
-  { name: 'Two-Way Deal',     minOvr: 0,  base: 30 },
-  { name: 'Bench Deal',       minOvr: 60, base: 50 },
-  { name: 'Rotation Deal',    minOvr: 64, base: 75 },
-  { name: 'Starter Deal',     minOvr: 68, base: 110 },
-  { name: 'Max Starter',      minOvr: 72, base: 160 },
-  { name: 'All-Star Deal',    minOvr: 76, base: 230 },
-  { name: 'Superstar Deal',   minOvr: 80, base: 330 },
-  { name: 'MVP Max',          minOvr: 86, base: 470 },
-  { name: 'Legend Deal',      minOvr: 92, base: 670 },
-  { name: 'GOAT Deal',        minOvr: 97, base: 950 },
+  { name: 'Two-Way Deal',     minOvr: 0 },
+  { name: 'Bench Deal',       minOvr: 60 },
+  { name: 'Rotation Deal',    minOvr: 64 },
+  { name: 'Starter Deal',     minOvr: 68 },
+  { name: 'Max Starter',      minOvr: 72 },
+  { name: 'All-Star Deal',    minOvr: 76 },
+  { name: 'Superstar Deal',   minOvr: 80 },
+  { name: 'MVP Max',          minOvr: 86 },
+  { name: 'Legend Deal',      minOvr: 92 },
+  { name: 'GOAT Deal',        minOvr: 97 },
 ];
 
 // Side income (scales with rating and overall)

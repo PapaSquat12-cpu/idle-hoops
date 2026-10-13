@@ -2,12 +2,13 @@
 // Pure logic (no DOM) so it can be balance-tested under Node.
 
 import {
-  MAX_RATING, BASE_RATING, START_CAP, SEASON_GAMES, COST, RATINGS, POSITIONS, ARCHETYPES,
-  LEAGUES, CONTRACTS, LEGACY_RATING_BONUS, LEGACY_EARN_BONUS, TRAINING, ADS, CATEGORIES,
-  NON_BOOST_CAP, CAP_BREAK_GS36, BODY,
+  MAX_RATING, BASE_RATING, MVP_RIVAL, STAMINA_FULL, MAX_MINUTES, START_CAP, SEASON_GAMES, COST, RATINGS, POSITIONS, ARCHETYPES,
+  LEAGUES, CONTRACTS, START_OVERALL, OVERALL_PER_ASCENSION, PAY, PAY_STEP, TRAINING, ADS, CATEGORIES,
+  NON_BOOST_CAP, BODY,
   coreWeights, INVEST, SIDE_RATE, CLUTCH, DAILY,
 } from './data.js';
 import { computeOverall, gaussian, clamp } from './sim.js';
+import { MVP_BARS } from './mvp_bars.js';
 
 export { computeOverall, coreWeights };
 
@@ -18,15 +19,22 @@ export const POS_BY_ID = Object.fromEntries(POSITIONS.map((p) => [p.id, p]));
 export const archetypesFor = (pos) => ARCHETYPES.filter((a) => a.pos === pos);
 
 // ---------- Caps ----------
-// Archetype-boosted ratings can reach 99. Everything else stops at NON_BOOST_CAP
-// until Cap Breakers raise it.
-export function archCap(archId, ratingId) {
-  return ARCH_BY_ID[archId].boosts[ratingId] ? MAX_RATING : NON_BOOST_CAP;
+// Core and archetype-boosted ratings can always reach 99.
+// Other ratings start at NON_BOOST_CAP in league 0 and rise evenly to 99 in the last league.
+export function leagueRatingCap(leagueIdx) {
+  const top = LEAGUES.length - 1;
+  const l = clamp(leagueIdx, 0, top);
+  return NON_BOOST_CAP + Math.round(((MAX_RATING - NON_BOOST_CAP) * l) / top);
+}
+
+export function archCap(archId, ratingId, leagueIdx = 0) {
+  const a = ARCH_BY_ID[archId];
+  if (a.boosts[ratingId] || coreWeights(a.pos, archId)[ratingId]) return MAX_RATING;
+  return leagueRatingCap(leagueIdx);
 }
 
 export function ratingCap(state, ratingId) {
-  const bonus = (state.capBonus && state.capBonus[ratingId]) || 0;
-  return Math.min(MAX_RATING, archCap(state.archId, ratingId) + bonus + bodyCapBonus(state.body, ratingId, state.pos));
+  return Math.min(MAX_RATING, archCap(state.archId, ratingId, state.leagueIdx) + bodyCapBonus(state.body, ratingId, state.pos));
 }
 
 // ---------- Body type (height and weight) ----------
@@ -97,15 +105,40 @@ export function bodyEffects(b, pos) {
   return { shifts, caps };
 }
 
-// Starting ratings for an archetype, plus legacy bonus from ascensions and body type
+// Starting ratings. Every archetype and body starts at the same Overall:
+// START_OVERALL + OVERALL_PER_ASCENSION * ascensions.
+// Body shifts are made zero-sum across core ratings, then core ratings are nudged by 1 point
+// (round-robin, highest weight first) until the computed Overall hits the target exactly.
 export function startingRatings(archId, ascensions = 0, body = null) {
   const a = ARCH_BY_ID[archId];
   const b = clampBody(body || bodyMid(a.pos), a.pos);
+  const core = coreWeights(a.pos, archId);
+  const coreIds = Object.keys(core).filter((id) => core[id] > 0).sort((x, y) => core[y] - core[x]);
+  const wSum = coreIds.reduce((s, id) => s + core[id], 0);
+  const cap = (id) => Math.min(MAX_RATING, archCap(archId, id, ascensions) + bodyCapBonus(b, id, a.pos));
+
+  // Raw body shifts, then make the core-weighted average shift zero
+  const shift = {};
+  for (const r of RATINGS) shift[r.id] = bodyShift(b, r.id, a.pos);
+  const avgShift = coreIds.reduce((s, id) => s + core[id] * shift[id], 0) / wSum;
   const out = {};
   for (const r of RATINGS) {
-    let v = Math.min(BASE_RATING + (a.boosts[r.id] || 0), START_CAP);
-    v += ascensions * LEGACY_RATING_BONUS + bodyShift(b, r.id, a.pos);
-    out[r.id] = clamp(Math.round(v), 1, archCap(archId, r.id) + bodyCapBonus(b, r.id, a.pos));
+    let v = Math.min(BASE_RATING + (a.boosts[r.id] || 0), START_CAP) + shift[r.id];
+    if (core[r.id] > 0) v -= avgShift;
+    out[r.id] = clamp(Math.round(v), 1, cap(r.id));
+  }
+
+  // Hit the exact target Overall with 1-point nudges on core ratings
+  const target = START_OVERALL + OVERALL_PER_ASCENSION * ascensions;
+  for (let guard = 0; guard < 500; guard++) {
+    const o = computeOverall(out, a.pos, archId);
+    if (o === target) break;
+    const dir = o < target ? 1 : -1;
+    // Spread the nudge: raise the lowest core rating, or lower the highest, so no single rating takes the hit
+    const movable = coreIds.filter((i) => (dir > 0 ? out[i] < cap(i) : out[i] > 1));
+    if (!movable.length) break;
+    const id = movable.reduce((best, i) => (dir > 0 ? (out[i] < out[best] ? i : best) : (out[i] > out[best] ? i : best)));
+    out[id] += dir;
   }
   return out;
 }
@@ -146,10 +179,18 @@ export function maxAffordable(ratingId, value, archId, coins, leagueIdx = 0, cap
 }
 
 // ---------- Contracts, minutes, pay ----------
+// Smooth pay curve by Overall: PAY.start at Overall 50, rising by PAY_STEP per point.
+// League pay (coinMult) is applied separately. Game pay uses this curve directly (no minutes factor),
+// so minutes growth doesn't speed up the grind relative to rating prices.
+export function payCurve(overall) {
+  return PAY.start * Math.pow(PAY_STEP, overall - START_OVERALL);
+}
+
+// Tier name for display; base is the smooth pay for this Overall.
 export function contractFor(overall) {
   let idx = 0;
   CONTRACTS.forEach((c, i) => { if (overall >= c.minOvr) idx = i; });
-  return { index: idx, ...CONTRACTS[idx] };
+  return { index: idx, ...CONTRACTS[idx], base: payCurve(overall) };
 }
 
 export function nextContract(overall) {
@@ -157,24 +198,31 @@ export function nextContract(overall) {
   return CONTRACTS[c.index + 1] || null;
 }
 
+// Stamina caps minutes, independent of Overall: full MAX_MINUTES at STAMINA_FULL, proportional below.
+export function staminaMinutesCap(ratings) {
+  return MAX_MINUTES * clamp((ratings.stam || 0) / STAMINA_FULL, 0, 1);
+}
+
+// Minutes played = the Overall-based minutes, limited by the stamina cap
+export function playMinutes(state) {
+  return Math.min(minutesFor(overallOf(state)), staminaMinutesCap(state.ratings));
+}
+
 export function minutesFor(overall) {
   // Reserve-level players get a handful of minutes; minutes climb steeply with Overall
-  return clamp(4 + (overall - 40) * 0.7, 4, 38);
+  return clamp(4 + (overall - 40) * 0.7, 4, MAX_MINUTES);
 }
 
 export function perfMultiplier(gs36) {
   return clamp(0.4 + gs36 / 25, 0.4, 2.2);
 }
 
-export function legacyEarnMult(ascensions) {
-  return 1 + LEGACY_EARN_BONUS * ascensions;
-}
 
 // Coins from one game
 export function gameEarnings({ overall, minutes, gs36, leagueIdx, ascensions }) {
   const c = contractFor(overall);
   const league = LEAGUES[leagueIdx];
-  return c.base * (minutes / 30) * perfMultiplier(gs36) * league.coinMult * legacyEarnMult(ascensions);
+  return c.base * perfMultiplier(gs36) * league.coinMult;
 }
 
 function avgRating(ratings) {
@@ -190,7 +238,7 @@ export function investLevel(state, kind) {
 // Pay for a typical game at the current contract, league, and ascension
 export function typicalGamePay(state) {
   const ovr = overallOf(state);
-  return gameEarnings({ overall: ovr, minutes: minutesFor(ovr), gs36: 15, leagueIdx: state.leagueIdx, ascensions: state.ascensions });
+  return gameEarnings({ overall: ovr, minutes: playMinutes(state), gs36: 15, leagueIdx: state.leagueIdx, ascensions: state.ascensions });
 }
 
 // Cost of the next level: a number of typical games' pay, growing with (level+1)^costExp
@@ -242,14 +290,14 @@ function contractBase(state) {
 export function adReward(state) {
   const league = LEAGUES[state.leagueIdx];
   return Math.round(contractBase(state) * SIDE_RATE.ad * league.coinMult
-    * (1 + INVEST.agency.payMult * investLevel(state, 'agency')) * legacyEarnMult(state.ascensions));
+    * (1 + INVEST.agency.payMult * investLevel(state, 'agency')));
 }
 
 // quality: 0.5 (sloppy) to 2 (perfect)
 export function trainingReward(state, quality) {
   const league = LEAGUES[state.leagueIdx];
   return Math.round(contractBase(state) * SIDE_RATE.drill * league.coinMult
-    * (1 + INVEST.trainer.payMult * investLevel(state, 'trainer')) * quality * legacyEarnMult(state.ascensions));
+    * (1 + INVEST.trainer.payMult * investLevel(state, 'trainer')) * quality);
 }
 
 export const emptySeason = () => ({ gp: 0, w: 0, l: 0, min: 0, gsSum: 0, pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0, fgm: 0, fga: 0, tpm: 0, tpa: 0 });
@@ -261,8 +309,6 @@ export function newCareer({ name, pos, archId, body }) {
     name, pos, archId,
     body: b,
     ratings: startingRatings(archId, 0, b),
-    capBonus: {},
-    capBreakers: 0,
     invest: { agency: 0, trainer: 0, idle: 0 },
     leagueIdx: 0,
     ascensions: 0,
@@ -271,7 +317,7 @@ export function newCareer({ name, pos, archId, body }) {
     seasonStats: emptySeason(),
     lastSeason: null,
     mvpThisLeague: 0,
-    career: { games: 0, seasons: 0, mvps: 0, coinsEarned: 0, coinsSpent: 0, pts: 0, bestGs36: 0, training: 0, ads: 0, ascensions: 0, breakers: 0 },
+    career: { games: 0, seasons: 0, mvps: 0, coinsEarned: 0, coinsSpent: 0, pts: 0, bestGs36: 0, training: 0, ads: 0, ascensions: 0 },
     savedAt: Date.now(),
   };
 }
@@ -280,27 +326,19 @@ export function overallOf(state) {
   return computeOverall(state.ratings, state.pos, state.archId);
 }
 
-// ---------- Upgrades & cap breakers ----------
-// Plan a purchase of up to `amount` points without changing state.
-// Points below the cap cost coins. Each point above the cap also costs one Cap Breaker,
-// and that breaker raises the cap by 1.
+// ---------- Upgrades ----------
+// Plan a purchase of up to `amount` points without changing state. Points cost coins and stop at the rating cap.
 export function planUpgrade(state, ratingId, amount) {
   let cur = state.ratings[ratingId];
-  let cap = ratingCap(state, ratingId);
-  let coins = state.coins, breakers = state.capBreakers;
-  let n = 0, total = 0, used = 0;
-  while (n < amount && cur < MAX_RATING) {
+  const cap = ratingCap(state, ratingId);
+  let coins = state.coins;
+  let n = 0, total = 0;
+  while (n < amount && cur < cap) {
     const cost = pointCost(ratingId, cur, state.archId, state.leagueIdx);
-    if (cur < cap) {
-      if (coins < cost) break;
-    } else {
-      if (breakers < 1 || coins < cost) break;
-      breakers -= 1; used += 1;
-      cap = cur + 1;
-    }
+    if (coins < cost) break;
     coins -= cost; total += cost; cur += 1; n += 1;
   }
-  return { n, total, breakers: used };
+  return { n, total };
 }
 
 // Buy up to `amount` points on a rating. Returns number of points bought.
@@ -309,33 +347,26 @@ export function upgrade(state, ratingId, amount) {
   if (p.n === 0) return 0;
   state.coins -= p.total;
   state.career.coinsSpent += p.total;
-  state.capBreakers -= p.breakers;
-  state.capBonus = state.capBonus || {};
-  state.capBonus[ratingId] = (state.capBonus[ratingId] || 0) + p.breakers;
   state.ratings[ratingId] += p.n;
   if (p.n > 0) recordDaily(state, 'upgrade', p.n);
   return p.n;
 }
 
-export function awardCapBreaker(state) {
-  state.capBreakers += 1;
-  state.career.breakers += 1;
-}
-
 // ---------- Prestige ----------
+// Ascension gate: Overall 99 plus a league MVP (the MVP bar is the 97-Overall level, see mvp_bars.js)
+export const ASCEND_OVERALL = 99;
+
 export function canAscend(state) {
-  return overallOf(state) >= 99 && state.mvpThisLeague >= 1 && state.leagueIdx < LEAGUES.length - 1;
+  return overallOf(state) >= ASCEND_OVERALL && state.mvpThisLeague >= 1 && state.leagueIdx < LEAGUES.length - 1;
 }
 
 // Prestige: move to next league, reset ratings and caps near archetype base, reset coins.
-// Unused Cap Breakers carry over.
 export function ascend(state) {
   if (!canAscend(state)) return false;
   state.leagueIdx += 1;
   state.ascensions += 1;
   state.career.ascensions += 1;
   state.ratings = startingRatings(state.archId, state.ascensions, state.body);
-  state.capBonus = {};
   state.coins = 0;
   state.mvpThisLeague = 0;
   state.seasonStats = emptySeason();
@@ -345,20 +376,22 @@ export function ascend(state) {
 
 // ---------- Season & MVP ----------
 // Expected best-of-15 rival Game Score per 36 (approx. mu + 1.74 sd), used for the MVP benchmark
+// MVP rivals: the top of 15 draws, centered at MVP_RIVAL.mean x the archetype's bar, with spread MVP_RIVAL.sd x bar
 export const RIVAL_SD = 2.5;
-export function mvpBenchmark(leagueIdx) {
-  return LEAGUES[leagueIdx].mvpMu + 1.74 * RIVAL_SD;
+// MVP bar for this archetype in this league: season-style Game Score per 36 of an Overall-97 build of the archetype
+export function mvpBenchmark(state) {
+  return MVP_BARS[state.archId][state.leagueIdx];
 }
 
-// Season end: returns { mvp: bool, playerGs36, topRival }
+// Season end: returns { mvp: bool, playerGs, topRival }. MVP uses Game Score per game, so minutes count.
 export function resolveSeasonMVP(state) {
   const s = state.seasonStats;
-  const playerGs36 = s.min > 0 ? (s.gsSum / s.min) * 36 : 0;
-  const mu = LEAGUES[state.leagueIdx].mvpMu;
+  const playerGs = s.gp > 0 ? s.gsSum / s.gp : 0;
+  const bar = mvpBenchmark(state);
   let topRival = -Infinity;
-  for (let i = 0; i < 15; i++) topRival = Math.max(topRival, gaussian(mu, RIVAL_SD));
-  const mvp = s.gp >= SEASON_GAMES * 0.6 && playerGs36 > topRival;
-  return { mvp, playerGs36, topRival };
+  for (let i = 0; i < 15; i++) topRival = Math.max(topRival, gaussian(MVP_RIVAL.mean * bar, MVP_RIVAL.sd * bar));
+  const mvp = s.gp >= SEASON_GAMES * 0.6 && playerGs >= bar && playerGs > topRival;
+  return { mvp, playerGs, topRival };
 }
 
 // Apply a finished game to the state. earnMult scales pay (e.g. AWAY_EARN_MULT when away). Returns earnings.
@@ -371,7 +404,6 @@ export function applyGame(state, res, earnMult = 1) {
   state.career.games += 1;
   state.career.pts += res.box.pts;
   state.career.bestGs36 = Math.max(state.career.bestGs36, res.gs36);
-  if (res.gs36 >= CAP_BREAK_GS36) awardCapBreaker(state);
 
   const s = state.seasonStats;
   s.gp += 1; if (res.won) s.w += 1; else s.l += 1;
@@ -387,7 +419,7 @@ export function finishSeason(state) {
   const mvpInfo = resolveSeasonMVP(state);
   if (mvpInfo.mvp) { state.mvpThisLeague += 1; state.career.mvps += 1; }
   state.career.seasons += 1;
-  state.lastSeason = { season: state.season, ...state.seasonStats, mvp: mvpInfo.mvp, playerGs36: mvpInfo.playerGs36, topRival: mvpInfo.topRival, league: LEAGUES[state.leagueIdx].name, ovr: overallOf(state) };
+  state.lastSeason = { season: state.season, ...state.seasonStats, mvp: mvpInfo.mvp, playerGs: mvpInfo.playerGs, topRival: mvpInfo.topRival, league: LEAGUES[state.leagueIdx].name, ovr: overallOf(state) };
   state.season += 1;
   state.seasonStats = emptySeason();
   return state.lastSeason;
@@ -397,7 +429,7 @@ export function finishSeason(state) {
 export function clutchReward(state) {
   const league = LEAGUES[state.leagueIdx];
   const clutch = state.ratings.clutch || 0;
-  return Math.round(contractBase(state) * CLUTCH.rate * league.coinMult * (0.5 + clutch / 100) * legacyEarnMult(state.ascensions));
+  return Math.round(contractBase(state) * CLUTCH.rate * league.coinMult * (0.5 + clutch / 100));
 }
 
 // ---------- Daily objectives (reset at local midnight) ----------
@@ -478,7 +510,7 @@ export function dailyObjectives(state) {
 // Payout for the next claim: rises slightly with each claim made today
 export function dailyPayout(state, claimedToday) {
   const league = LEAGUES[state.leagueIdx];
-  return contractBase(state) * DAILY.rate * league.coinMult * legacyEarnMult(state.ascensions) * (1 + DAILY.step * claimedToday);
+  return contractBase(state) * DAILY.rate * league.coinMult * (1 + DAILY.step * claimedToday);
 }
 
 // Record active play. Returns the objectives that just became ready to claim: [{ id, label }].
@@ -530,11 +562,11 @@ export function serialize(state) { return JSON.stringify(state); }
 export function deserialize(str) {
   const s = JSON.parse(str);
   if (!s || s.v !== 2) return null;
-  s.capBonus = s.capBonus || {};
+  delete s.capBonus;
+  delete s.capBreakers;
   s.body = clampBody(s.body, s.pos);
-  s.capBreakers = s.capBreakers || 0;
   s.invest = { agency: 0, trainer: 0, idle: 0, ...(s.invest || {}) };
-  s.career.breakers = s.career.breakers || 0;
+  delete s.career.breakers;
   return s;
 }
 export { CATEGORIES };
