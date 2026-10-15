@@ -225,8 +225,11 @@ export const SIDE_RATE = { ad: 0.25, drill: 0.10 };   // fraction of contract ba
 // and its cost is paybackPayouts times the payout it adds at the new level, so every level pays back in
 // the same number of ads/drills in any league. Away Speed's cost is paybackHours of the extra away pay it adds.
 export const INVEST = {
-  agency:  { payMult: 0.35, speed: 0.06, paybackPayouts: 60 },   // ads: payout x1.35 per level; offer gap divided by (1 + 0.06 x level)
-  trainer: { payMult: 0.30, speed: 0.06, paybackPayouts: 60 },   // drills: payout x1.30 per level; cooldown divided by (1 + 0.06 x level)
+  // Sponsor and drill payouts scale with current contract pay. Each level multiplies payout by (1 + payMult)
+  // for the first fastLevels levels, then by (1 + lateMult). A level costs (paybackPayouts + paybackPerLevel x level)
+  // times the payout it adds, so later levels take longer to pay back.
+  agency:  { payMult: 0.35, lateMult: 0.05, fastLevels: 10, paybackPayouts: 60, paybackPerLevel: 50, speed: 0.06 },   // ads; offer gap divided by (1 + 0.06 x level)
+  trainer: { payMult: 0.30, lateMult: 0.05, fastLevels: 10, paybackPayouts: 60, paybackPerLevel: 50, speed: 0.06 },   // drills; cooldown divided by (1 + 0.06 x level)
   idle:    { base: 0.5, max: 1, pace: 0.01, paybackHours: 1, gameSec: 20, costGrowth: 0.06, maxLevel: 50, timeBaseMin: 120, timeStepMin: 12 }, // away games: pace starts at 0.5x, +0.01 per level, capped at 1x; max away time starts at 2h, +12 min per level, capped at 50 levels (12h)
 };
 
@@ -234,18 +237,19 @@ export const INVEST = {
 export const CLUTCH = { rate: 0.4, closeMargin: 6 };
 
 // Daily objectives reset at local midnight. Each category is an uncapped ladder (1st, 2nd, 3rd... each day).
-// Payout = contract base x rate x (1 + step x objectives completed today).
+// Payout = contract base x rate x multiplier. Multiplier: 1x for the first claim of the day, then +step per claim
+// made earlier that day (uncapped). 4/9 per claim makes the 10th claim pay 5x.
 // Not affected by investments.
 export const DAILY = {
   rate: 0.4,
-  step: 0.1,
+  step: 4 / 9,
   // Stat ladders: tier n uses entry n (the last entry repeats). One qualifying game per tier.
   statLadders: {
     pts: [10, 15, 20, 25, 30, 35, 40, 45, 50],
     ast: [5, 8, 10, 12, 15, 20, 25],
     reb: [5, 10, 15, 20, 25, 30],
     def: [2, 3, 4, 5, 6, 7, 8, 9, 10],   // steals or blocks, per archetype
-    tpm: [2, 3, 4, 5, 6, 7, 8],
+    tpm: [2, 3, 4, 5, 6, 7, 8, 9, 10],
   },
 };
 

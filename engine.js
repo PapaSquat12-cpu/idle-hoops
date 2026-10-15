@@ -256,7 +256,8 @@ export function investCost(state, kind) {
   }
   const I = INVEST[kind];
   const rate = kind === 'agency' ? SIDE_RATE.ad : SIDE_RATE.drill;
-  return Math.max(1, Math.round(I.paybackPayouts * sideBase(state) * rate * Math.pow(1 + I.payMult, next)));
+  const payback = I.paybackPayouts + I.paybackPerLevel * next;
+  return Math.max(1, Math.round(payback * sideBase(state) * rate * investMult(kind, next)));
 }
 
 export function buyInvest(state, kind) {
@@ -308,17 +309,25 @@ function contractBase(state) {
 
 // Base for sponsor and drill payouts: a starting player's pay in the current league
 export function sideBase(state) {
-  return starterPay() * LEAGUES[state.leagueIdx].coinMult;
+  return contractBase(state) * LEAGUES[state.leagueIdx].coinMult;
 }
 
-// Sponsor payout per ad: compounds x(1 + payMult) per level
+// Payout multiplier for a sponsor or drill level: fast growth for the first fastLevels levels, slower after
+export function investMult(kind, level) {
+  const I = INVEST[kind];
+  const fast = Math.min(level, I.fastLevels);
+  const slow = Math.max(0, level - I.fastLevels);
+  return Math.pow(1 + I.payMult, fast) * Math.pow(1 + I.lateMult, slow);
+}
+
+// Sponsor payout per ad
 export function adReward(state) {
-  return Math.round(sideBase(state) * SIDE_RATE.ad * Math.pow(1 + INVEST.agency.payMult, investLevel(state, 'agency')));
+  return Math.round(sideBase(state) * SIDE_RATE.ad * investMult('agency', investLevel(state, 'agency')));
 }
 
 // quality: 0.5 (sloppy) to 2 (perfect)
 export function trainingReward(state, quality) {
-  return Math.round(sideBase(state) * SIDE_RATE.drill * Math.pow(1 + INVEST.trainer.payMult, investLevel(state, 'trainer')) * quality);
+  return Math.round(sideBase(state) * SIDE_RATE.drill * investMult('trainer', investLevel(state, 'trainer')) * quality);
 }
 
 export const emptySeason = () => ({ gp: 0, w: 0, l: 0, min: 0, gsSum: 0, pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0, fgm: 0, fga: 0, tpm: 0, tpa: 0 });
@@ -529,6 +538,7 @@ export function dailyObjectives(state) {
 // Payout for the next claim: rises slightly with each claim made today
 export function dailyPayout(state, claimedToday) {
   const league = LEAGUES[state.leagueIdx];
+  // claimedToday = claims already made today (all categories): claim 1 pays 1x, then +step per earlier claim
   return contractBase(state) * DAILY.rate * league.coinMult * (1 + DAILY.step * claimedToday);
 }
 
