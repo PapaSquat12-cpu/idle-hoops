@@ -37,6 +37,9 @@ export const BODY = {
 // Rating caps by league. Core ratings (and archetype boosts) can always reach 99, so Overall 99 is
 // reachable in league 1. Other ratings start at NON_BOOST_CAP and rise each league to 99 by the last league.
 export const NON_BOOST_CAP = 80;
+// Lowest starting value of the shot ratings (inside, mid, three) across all builds and body types.
+// Shot mix is measured above this value, so a rating at the floor takes no shots of that type.
+export const SHOT_FLOOR = 40;
 export const BASE_RATING = 45;      // every rating starts here before archetype boosts
 export const START_CAP = 85;        // archetype starting ratings never exceed this
 export const SEASON_GAMES = 82;
@@ -83,15 +86,15 @@ export const RATINGS = [
 // Positions define which ratings make up the Overall (the "core" with weights)
 export const POSITIONS = [
   { id: 'PG', name: 'Point Guard', blurb: 'Runs the offense. Handle, passing, and vision drive the Overall.',
-    core: { handle: 3, pass: 3, vision: 2, three: 2, perD: 2, speed: 2, iq: 2, mid: 1, ft: 1, stam: 1 } },
+    core: { handle: 3, pass: 3, vision: 2, three: 2, perD: 2, speed: 2, iq: 2, hustle: 1, mid: 1, ft: 1, stam: 1 } },
   { id: 'SG', name: 'Shooting Guard', blurb: 'Scoring wing. Three-point shooting and perimeter defense.',
-    core: { three: 3, mid: 2, handle: 2, ft: 1, perD: 2, speed: 2, iq: 2, inside: 1, clutch: 1, stam: 1 } },
+    core: { three: 3, mid: 2, handle: 2, ft: 1, perD: 2, speed: 2, iq: 2, hustle: 1, inside: 1, clutch: 1, stam: 1 } },
   { id: 'SF', name: 'Small Forward', blurb: 'Versatile wing. Balanced scoring, defense, and hustle.',
     core: { inside: 2, three: 2, perD: 2, drb: 1, speed: 1, str: 1, iq: 2, mid: 1, hustle: 1, steal: 1, stam: 1 } },
   { id: 'PF', name: 'Power Forward', blurb: 'Interior big. Rebounding, interior defense, and strength.',
     core: { inside: 2, intD: 3, drb: 2, orb: 2, str: 2, block: 2, iq: 1, stam: 1, hustle: 1 } },
   { id: 'C', name: 'Center', blurb: 'Anchor of the paint. Blocks, boards, and interior defense.',
-    core: { intD: 3, block: 3, drb: 3, orb: 2, str: 2, inside: 2, vert: 2, iq: 1, hustle: 1 } },
+    core: { intD: 3, block: 3, drb: 3, orb: 2, str: 2, inside: 2, vert: 2, iq: 1, hustle: 1, stam: 1 } },
 ];
 
 // Archetypes: boosts raise starting ratings above BASE_RATING;
@@ -224,7 +227,7 @@ export const SIDE_RATE = { ad: 0.25, drill: 0.10 };   // fraction of contract ba
 export const INVEST = {
   agency:  { payMult: 0.35, speed: 0.06, paybackPayouts: 60 },   // ads: payout x1.35 per level; offer gap divided by (1 + 0.06 x level)
   trainer: { payMult: 0.30, speed: 0.06, paybackPayouts: 60 },   // drills: payout x1.30 per level; cooldown divided by (1 + 0.06 x level)
-  idle:    { base: 0.5, max: 1, pace: 0.01, paybackHours: 1, gameSec: 20, costGrowth: 0.15 }, // away games: pace starts at 0.5x, +0.01 per level, capped at 1x
+  idle:    { base: 0.5, max: 1, pace: 0.01, paybackHours: 1, gameSec: 20, costGrowth: 0.06, maxLevel: 50, timeBaseMin: 120, timeStepMin: 12 }, // away games: pace starts at 0.5x, +0.01 per level, capped at 1x; max away time starts at 2h, +12 min per level, capped at 50 levels (12h)
 };
 
 // Clutch time: in a close game entering Q4, one bonus per game. Scales with contract base and the Clutch rating.

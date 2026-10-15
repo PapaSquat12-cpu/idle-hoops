@@ -9,7 +9,6 @@ import * as E from './engine.js';
 const SAVE_KEY = 'idle-hoops-career-v2';
 const GAME_MS = 20000;          // real time for one game at 1x while you are watching
 const SPEEDS = [1, 2, 4];       // playback speeds while watching
-const MAX_OFFLINE_MS = 24 * 60 * 60 * 1000;           // away-time earnings cap: 24 hours
 const IDLE_MS = 90000;          // no interaction for this long = away
 
 const $ = (s) => document.querySelector(s);
@@ -313,6 +312,7 @@ function renderAll() {
     <div><span>Starting Overall</span><b>${START_OVERALL + state.ascensions * OVERALL_PER_ASCENSION}</b></div>
     <div><span>Build</span><b>${fmtHeight(state.body.height)}, ${state.body.weight} lb</b></div>`;
   $('#hRate').textContent = `~${fmt(perGame)} / game`;
+  $('#hOvr').textContent = ovr;
 
   const ovrEl = $('#ovr');
   if (ovrEl.textContent !== String(ovr) && ovrEl.textContent !== '--') { ovrEl.classList.remove('bump'); void ovrEl.offsetWidth; ovrEl.classList.add('bump'); }
@@ -385,9 +385,10 @@ function applyOfflineProgress() {
   const elapsed = Date.now() - (state.savedAt || Date.now());
   if (elapsed < 60000) return null;
   const gameMs = GAME_MS / E.awayPace(state);          // one game every gameMs while the page is closed
-  const maxGames = Math.floor(MAX_OFFLINE_MS / gameMs);
+  const maxMs = E.awayMaxMs(state);
+  const maxGames = Math.floor(maxMs / gameMs);
   const budget = Math.min(Math.floor(elapsed / gameMs), maxGames);
-  const sum = { elapsed, gameMs, capped: elapsed / gameMs > maxGames, games: 0, wins: 0, losses: 0, seasons: 0, mvps: 0, coins: 0, pausedForAscend: false, startLeague: LEAGUES[state.leagueIdx].name };
+  const sum = { elapsed, gameMs, maxMs, capped: elapsed / gameMs > maxGames, games: 0, wins: 0, losses: 0, seasons: 0, mvps: 0, coins: 0, pausedForAscend: false, startLeague: LEAGUES[state.leagueIdx].name };
   for (let i = 0; i < budget; i++) {
     if (E.canAscend(state)) { sum.pausedForAscend = true; break; }
     const { res } = simulateNext();
@@ -421,7 +422,7 @@ function showOfflineSummary(sum) {
         <li>Seasons completed: <b>${sum.seasons}</b>${sum.mvps ? `, MVPs: <b>${sum.mvps}</b>` : ''}</li>
         <li>Coins earned: <b class="gain">+${fmt(sum.coins)}</b></li>
       </ul>
-      ${sum.capped ? `<p class="muted small">Offline progress is capped at ${formatDuration(MAX_OFFLINE_MS)}.</p>` : ''}
+      ${sum.capped ? `<p class="muted small">Offline progress is capped at ${formatDuration(sum.maxMs)}.</p>` : ''}
       ${sum.pausedForAscend ? '<p><b>You are eligible to ascend.</b> Offline play stopped so you can decide when to move up.</p>' : ''}`,
     ok: 'Back to the court', cancel: 'Close',
   });
@@ -429,11 +430,12 @@ function showOfflineSummary(sum) {
 
 function startGame() {
   const { res, opponent } = simulateNext();
-  ui.game = { res, i: 0, events: res.events, gameNo: state.seasonStats.gp + 1 };
+  ui.game = { res, i: 0, events: res.events, gameNo: state.seasonStats.gp + 1, own: 0, opp: 0 };
   $('#sbYouName').textContent = 'YOU';
   $('#sbOppName').textContent = opponent.toUpperCase();
   $('#sbYou').textContent = '0';
   $('#sbOpp').textContent = '0';
+  $('#hScore').textContent = '0–0';
   $('#sbQ').textContent = 'Q1';
   $('#sbClock').textContent = '12:00';
   $('#sbStatus').textContent = 'Live';
@@ -453,6 +455,7 @@ function pushEvent(ev) {
   feed.scrollTop = feed.scrollHeight;
   $('#sbYou').textContent = ev.own;
   $('#sbOpp').textContent = ev.opp;
+  $('#hScore').textContent = `${ev.own}–${ev.opp}`;
   $('#sbQ').textContent = `Q${ev.q}`;
   $('#sbClock').textContent = ev.clock;
   if (ev.final) $('#sbStatus').textContent = ev.own > ev.opp ? 'Final · Win' : 'Final · Loss';
@@ -512,6 +515,8 @@ async function mainLoop() {
     const perEvent = GAME_MS / sp / g.events.length;
     const ev = g.events[g.i++];
     pushEvent(ev);
+    g.own = ev.own; g.opp = ev.opp;
+    renderClutch();
     if (ev.q === 4 && !g.clutchChecked) {
       g.clutchChecked = true;
       if (Math.abs(ev.own - ev.opp) <= CLUTCH.closeMargin) { g.clutchOpen = true; renderClutch(); }
@@ -748,7 +753,15 @@ function renderInvest() {
   setHTML(el, `
     ${row('agency', 'Agency', (l) => `+${Math.round((Math.pow(1 + INVEST.agency.payMult, l) - 1) * 100)}% ad pay · +${Math.round(INVEST.agency.speed * l * 100)}% offers`)}
     ${row('trainer', 'Trainer', (l) => `+${Math.round((Math.pow(1 + INVEST.trainer.payMult, l) - 1) * 100)}% drill pay · +${Math.round(INVEST.trainer.speed * l * 100)}% speed`)}
-    ${row('idle', 'Away Speed', (l) => `Idle games at ${Number(Math.min(INVEST.idle.max, INVEST.idle.base + INVEST.idle.pace * l).toFixed(2))}x`)}`);
+    ${row('idle', 'Away Speed', awaySpeedDesc)}`);
+}
+
+// Away Speed row: current pace and max away time
+function awaySpeedDesc(l) {
+  const I = INVEST.idle;
+  const pace = (x) => Number(Math.min(I.max, I.base + I.pace * x).toFixed(2));
+  const maxMin = (x) => I.timeBaseMin + I.timeStepMin * Math.min(I.maxLevel, x);
+  return `Now: ${pace(l)}x pace · max away ${formatDuration(maxMin(l) * 60000)}${l >= I.maxLevel ? ' · Maxed out' : ''}`;
 }
 
 function bindInvest() {
@@ -778,11 +791,17 @@ function showTab(name) {
 }
 
 // ================= CLUTCH TIME =================
+// Always visible on the Engage tab: mirrors the live score; the button lights up yellow when a claim is available
 function renderClutch() {
   const g = ui.game;
   const open = !!(state && g && g.clutchOpen && !g.clutchClaimed);
-  $('#clutchBar').classList.toggle('hidden', !open);
-  if (open) $('#clutchText').textContent = `CLUTCH TIME · Claim +${fmt(E.clutchReward(state))}`;
+  const claimed = !!(g && g.clutchClaimed);
+  $('#clutchScore').textContent = g ? `${g.own}–${g.opp}` : '–';
+  $('#clutchStatus').textContent = open ? 'Clutch time: claim now' : claimed ? 'Clutch claimed' : `Opens in Q4 within ${CLUTCH.closeMargin} points`;
+  const btn = $('#clutchBtn');
+  btn.disabled = !open;
+  btn.classList.toggle('gold', open);
+  btn.textContent = open ? `Claim +${fmt(E.clutchReward(state))}` : 'Clutch';
 }
 
 function claimClutch() {

@@ -275,6 +275,13 @@ export function awayPace(state) {
   return Math.min(I.max, I.base + I.pace * investLevel(state, 'idle'));
 }
 
+// Max away time (ms) that offline and away earnings can cover: 2h at level 0, +12 min per level, capped at 50 levels
+export function awayMaxMs(state) {
+  const I = INVEST.idle;
+  const level = Math.min(I.maxLevel, investLevel(state, 'idle'));
+  return (I.timeBaseMin + I.timeStepMin * level) * 60 * 1000;
+}
+
 // Timing divisors: gaps and cooldowns are divided by these
 export function agencyDivisor(state) {
   return 1 + INVEST.agency.speed * investLevel(state, 'agency');

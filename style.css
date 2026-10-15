@@ -330,7 +330,12 @@ input { font-size: 16px; }                          /* stops iOS zooming into th
 
 /* Clutch banner (sits above the bottom tabs, visible on every tab) */
 #game .clutch { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-shrink: 0;
-  background: rgba(255,194,51,.14); border-top: 1px solid var(--gold); padding: 8px 12px; font-weight: 800; font-size: .85rem; color: var(--gold); }
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; }
+#game .clutch .cscore { display: flex; flex-direction: column; min-width: 0; }
+#game .clutch .cscore span { color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; }
+#game .clutch .cscore b { font-size: 1.3rem; font-variant-numeric: tabular-nums; }
+#game .clutch .cscore small { color: var(--muted); font-size: .72rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#game .clutch button:disabled { opacity: .5; }
 #game .clutch.hidden { display: none !important; }
 #game .clutch button { padding: 6px 12px; }
 /* Daily objectives */
@@ -370,11 +375,13 @@ input { font-size: 16px; }                          /* stops iOS zooming into th
 #game .tabpanel[data-panel=engage] .card { padding: 9px 11px; }
 
 /* Compact game header: name and coins on one row, controls in one row below */
+#game .gright { grid-area: coins; display: flex; align-items: center; gap: 10px; min-width: 0; }
+#game .gright .hstat { flex-shrink: 0; }
 #game .gtop { display: grid; grid-template-columns: minmax(0,1fr) auto; grid-template-areas: "id coins" "ctrl ctrl"; gap: 6px 8px; padding: 6px 10px; align-items: center; }
 #game .gident { grid-area: id; min-width: 0; }
 #game .gident .pname { font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #game .gident .psub { font-size: .7rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#game .hstat.coins { grid-area: coins; text-align: right; }
+#game .hstat.coins { text-align: right; }
 #game .hstat.coins b { font-size: 1.05rem; }
 #game .hstat.coins small { display: none; }
 #game .gctrl { grid-area: ctrl; display: flex; flex-wrap: nowrap; gap: 4px; align-items: center; min-width: 0; }

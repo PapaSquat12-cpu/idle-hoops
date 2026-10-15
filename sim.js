@@ -1,7 +1,7 @@
 // ===== Possession-level game simulation with play-by-play events =====
 // Pure logic (no DOM) so it can be balance-tested under Node.
 
-import { coreWeights } from './data.js';
+import { coreWeights, SHOT_FLOOR } from './data.js';
 
 const POSSESSIONS = 100;   // possessions per team per game (4 quarters x 25)
 const REB_POS = { PG: 0.4, SG: 0.55, SF: 0.85, PF: 1.15, C: 1.3 };
@@ -121,9 +121,11 @@ export function simulateGame(o) {
           box.tov++;
           push(i, 'bad', pick(T.tov));
         } else {
-          const wt = 0.15 + r.three / 150, wm = 0.15 + r.mid / 150, wi = 0.15 + r.inside / 150;
-          const x = Math.random() * (wt + wm + wi);
-          const type = x < wt ? 'three' : x < wt + wm ? 'mid' : 'inside';
+          // Shot mix: each type's share is its rating above SHOT_FLOOR (the lowest starting rating of any build)
+          const wt = Math.max(0, r.three - SHOT_FLOOR), wm = Math.max(0, r.mid - SHOT_FLOOR), wi = Math.max(0, r.inside - SHOT_FLOOR);
+          const total = wt + wm + wi;
+          const x = total > 0 ? Math.random() * total : 0;
+          const type = total <= 0 ? 'inside' : x < wt ? 'three' : x < wt + wm ? 'mid' : 'inside';
           let p = type === 'three' ? 0.20 + r.three / 400
                 : type === 'mid' ? 0.25 + r.mid / 420
                 : 0.34 + r.inside / 380;

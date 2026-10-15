@@ -50,7 +50,11 @@
         <div class="pname" id="hName">-</div>
         <div class="psub" id="hSub">-</div>
       </div>
-      <div class="hstat coins"><span>Coins</span><b id="hCoins">0</b><small id="hRate"></small></div>
+      <div class="gright">
+        <div class="hstat"><span>Overall</span><b id="hOvr">-</b></div>
+        <div class="hstat"><span>Score</span><b id="hScore">-</b></div>
+        <div class="hstat coins"><span>Coins</span><b id="hCoins">0</b><small id="hRate"></small></div>
+      </div>
       <div class="gctrl">
         <div class="seg" id="speedSeg"></div>
         <button id="pauseBtn">Pause</button>
@@ -122,9 +126,9 @@
 
       <!-- TAB 3: engagement items -->
       <section class="tabpanel" data-panel="engage">
-        <div id="clutchBar" class="clutch hidden">
-          <span id="clutchText">CLUTCH TIME</span>
-          <button id="clutchBtn" class="gold">Claim</button>
+        <div id="clutchBar" class="clutch">
+          <div class="cscore"><span>Matchup</span><b id="clutchScore">–</b><small id="clutchStatus"></small></div>
+          <button id="clutchBtn" disabled>Clutch</button>
         </div>
         <div class="card training">
           <div class="cardhead">Training Drill <small id="trainCd"></small></div>
