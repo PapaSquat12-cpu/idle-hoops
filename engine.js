@@ -262,6 +262,7 @@ export function investCost(state, kind) {
 
 export function buyInvest(state, kind) {
   if (!INVEST[kind]) return false;
+  if (kind === 'idle' && investLevel(state, 'idle') >= INVEST.idle.maxLevel) return false;   // Away Speed stops at max level
   const cost = investCost(state, kind);
   if (state.coins < cost) return false;
   state.coins -= cost;

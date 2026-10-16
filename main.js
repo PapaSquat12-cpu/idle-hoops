@@ -741,13 +741,17 @@ function renderInvest() {
   if (!el || !state) return;
   const row = (kind, title, desc) => {
     const lvl = state.invest[kind];
+    const maxed = kind === 'idle' && lvl >= INVEST.idle.maxLevel;
     const cost = E.investCost(state, kind);
     const can = state.coins >= cost;
+    const button = maxed
+      ? `<button data-inv="${kind}" disabled class="maxed">Maxed</button>`
+      : `<button data-inv="${kind}" class="${can ? 'gold' : ''}">Upgrade ${fmt(cost)}</button>`;
     return `
-      <div class="inv-row">
-        <div class="inv-text"><b>${title} <span class="muted small">Lv ${lvl}</span></b>
+      <div class="inv-row${maxed ? ' is-maxed' : ''}">
+        <div class="inv-text"><b>${title} <span class="muted small">Lv ${lvl}${maxed ? ' · Maxed' : ''}</span></b>
           <div class="small muted">${desc(lvl)}</div></div>
-        <button data-inv="${kind}" class="${can ? 'gold' : ''}">Upgrade ${fmt(cost)}</button>
+        ${button}
       </div>`;
   };
   setHTML(el, `
