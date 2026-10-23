@@ -4,7 +4,7 @@
 import {
   MAX_RATING, BASE_RATING, MVP_RIVAL, STAMINA_FULL, MAX_MINUTES, START_CAP, SEASON_GAMES, COST, RATINGS, POSITIONS, ARCHETYPES,
   LEAGUES, CONTRACTS, START_OVERALL, OVERALL_PER_ASCENSION, PAY, PAY_STEP, TRAINING, ADS, CATEGORIES,
-  NON_BOOST_CAP, BODY,
+  NON_BOOST_CAP, BODY, OFF_ROLE, OFF_ROLE_CEILING, OFF_ROLE_BODY,
   coreWeights, INVEST, SIDE_RATE, CLUTCH, DAILY,
 } from './data.js';
 import { computeOverall, gaussian, clamp } from './sim.js';
@@ -34,7 +34,9 @@ export function archCap(archId, ratingId, leagueIdx = 0) {
 }
 
 export function ratingCap(state, ratingId) {
-  return Math.min(MAX_RATING, archCap(state.archId, ratingId, state.leagueIdx) + bodyCapBonus(state.body, ratingId, state.pos));
+  const adj = bodyCapAdjust(state.archId, ratingId, state.body, state.pos);
+  const ceil = bodyCeiling(state.archId, ratingId, state.body);
+  return Math.min(MAX_RATING, ceil, archCap(state.archId, ratingId, state.leagueIdx) + bodyCapBonus(state.body, ratingId, state.pos) + adj);
 }
 
 // ---------- Body type (height and weight) ----------
@@ -83,6 +85,36 @@ export function bodyShift(b, ratingId, pos) {
   return Math.round(1.5 * ((BODY.startShift.h[ratingId] || 0) * u.h + (BODY.startShift.w[ratingId] || 0) * u.w));
 }
 
+// Weight-based strength cap adjustment (lightest -10, heaviest +10). Core or boosted strength keeps the full cap.
+export function bodyCapAdjust(archId, ratingId, b, pos) {
+  const a = ARCH_BY_ID[archId];
+  if (ratingId !== 'str' || a.boosts.str || coreWeights(a.pos, archId).str) return 0;
+  return Math.round(BODY.strCapRange * bodyUnits(b, pos).w);
+}
+
+// Absolute ceiling for non-core ratings. Infinity when there is none.
+//   orb, drb, block: height ceiling (shortest 60, tallest 99)
+//   off-role ratings for the position: OFF_ROLE_CEILING (70)
+// Core ratings and archetype boosts are exempt.
+export function bodyCeiling(archId, ratingId, b) {
+  const a = ARCH_BY_ID[archId];
+  if (a.boosts[ratingId] || coreWeights(a.pos, archId)[ratingId]) return Infinity;
+  let ceil = Infinity;
+  if (ratingId === 'orb' || ratingId === 'drb' || ratingId === 'block') {
+    const t = clamp((normalizeBody(b).height - BODY.height.min) / (BODY.height.max - BODY.height.min), 0, 1);
+    ceil = Math.round(BODY.boardCeiling.atMin + t * (BODY.boardCeiling.atMax - BODY.boardCeiling.atMin));
+  }
+  if ((OFF_ROLE[a.pos] || []).includes(ratingId)) {
+    if (OFF_ROLE_BODY.ratings.includes(ratingId)) {
+      const nb = normalizeBody(b);
+      const tallness = clamp((nb.height - BODY.height.min) / (BODY.height.max - BODY.height.min), 0, 1);
+      const lightness = clamp(1 - (nb.weight - BODY.weight.min) / (BODY.weight.max - BODY.weight.min), 0, 1);
+      ceil = Math.min(ceil, OFF_ROLE_CEILING + Math.round(OFF_ROLE_BODY.tall * tallness + OFF_ROLE_BODY.light * lightness));
+    } else ceil = Math.min(ceil, OFF_ROLE_CEILING);
+  }
+  return ceil;
+}
+
 export function bodyCapBonus(b, ratingId, pos) {
   const u = bodyUnits(b, pos);
   let bonus = 0;
@@ -94,13 +126,15 @@ export function bodyCapBonus(b, ratingId, pos) {
 }
 
 // Human-readable effects of a body type within a position, for the create screen
-export function bodyEffects(b, pos) {
+export function bodyEffects(b, pos, archId = null) {
   const shifts = [], caps = [];
   for (const r of RATINGS) {
     const d = bodyShift(b, r.id, pos);
     if (d) shifts.push({ id: r.id, name: r.name, delta: d });
-    const c = bodyCapBonus(b, r.id, pos);
-    if (c) caps.push({ id: r.id, name: r.name, bonus: c });
+    const c = bodyCapBonus(b, r.id, pos) + (archId ? bodyCapAdjust(archId, r.id, b, pos) : 0);
+    const ceil = archId ? bodyCeiling(archId, r.id, b) : Infinity;
+    if (ceil !== Infinity) caps.push({ id: r.id, name: r.name, ceiling: ceil });
+    else if (c) caps.push({ id: r.id, name: r.name, bonus: c });
   }
   return { shifts, caps };
 }
@@ -115,7 +149,7 @@ export function startingRatings(archId, ascensions = 0, body = null) {
   const core = coreWeights(a.pos, archId);
   const coreIds = Object.keys(core).filter((id) => core[id] > 0).sort((x, y) => core[y] - core[x]);
   const wSum = coreIds.reduce((s, id) => s + core[id], 0);
-  const cap = (id) => Math.min(MAX_RATING, archCap(archId, id, ascensions) + bodyCapBonus(b, id, a.pos));
+  const cap = (id) => Math.min(MAX_RATING, bodyCeiling(archId, id, b), archCap(archId, id, ascensions) + bodyCapBonus(b, id, a.pos) + bodyCapAdjust(archId, id, b, a.pos));
 
   // Raw body shifts, then make the core-weighted average shift zero
   const shift = {};

@@ -25,12 +25,17 @@ export const BODY = {
     w: { str: 3, inside: 1, vert: -1, speed: -1.5 },
   },
   capStep: 5,
+  // Strength cap by weight (archetypes where strength is not core or boosted): -10 at the lightest, +10 at the heaviest
+  strCapRange: 10,
+  // Absolute ceiling on non-core rebounding and blocks, by height: boardCeiling.atMin at the shortest listed height,
+  // boardCeiling.atMax at the tallest. Ignores league. A 6'0" guard tops out near 69 in every league.
+  boardCeiling: { atMin: 60, atMax: 99 },
   // Position-relative position from -1 (bottom of range) to +1 (top). A rule applies when axis * dir >= at.
   // at = 0.5 means the outer quarter of the range on that side.
   capRules: [
     { axis: 'h', dir: 1,  at: 0.5, ratings: ['intD', 'orb', 'drb', 'block'] },  // tall
     { axis: 'h', dir: -1, at: 0.5, ratings: ['handle', 'three', 'speed'] },     // short
-    { axis: 'w', dir: 1,  at: 0.5, ratings: ['str', 'inside'] },                // heavy
+    { axis: 'w', dir: 1,  at: 0.5, ratings: ['inside'] },                       // heavy (strength cap comes from strCapRange)
     { axis: 'w', dir: -1, at: 0.5, ratings: ['speed', 'handle'] },              // light
   ],
 };
@@ -82,6 +87,19 @@ export const RATINGS = [
   { id: 'clutch',  name: 'Clutch',            cat: 'Mental',     desc: 'Performance in close late-game moments' },
   { id: 'hustle',  name: 'Hustle',            cat: 'Mental',     desc: 'Loose balls, effort plays, and motor' },
 ];
+
+// Off-role ratings: skills a position does not naturally own. Without a core weight or an archetype boost,
+// these stop at OFF_ROLE_CEILING, so a defensive center can't reach 80 handling or three-point shooting.
+export const OFF_ROLE = {
+  PG: ['intD', 'block', 'orb', 'drb', 'str', 'vert'],
+  SG: ['intD', 'block', 'orb', 'drb', 'str', 'vert', 'vision'],
+  SF: ['block', 'orb', 'intD', 'vert'],
+  PF: ['handle', 'pass', 'vision', 'three', 'speed'],
+  C:  ['handle', 'pass', 'vision', 'three', 'speed', 'mid'],
+};
+export const OFF_ROLE_CEILING = 70;
+// Body effect on the off-role ceiling for these ratings: tallest and heaviest -10, shortest and lightest +5 (range 60 to 75)
+export const OFF_ROLE_BODY = { ratings: ['handle', 'three', 'speed', 'pass', 'vision'], tall: -10, light: 5 };
 
 // Positions define which ratings make up the Overall (the "core" with weights)
 export const POSITIONS = [

@@ -150,10 +150,10 @@ function renderBodyCard() {
 }
 
 function renderBodyFx() {
-  const fx = E.bodyEffects(ui.body, ui.createPos);
+  const fx = E.bodyEffects(ui.body, ui.createPos, ui.createArch);
   const parts = [
     ...fx.shifts.map((s) => `<span class="chip ${s.delta > 0 ? 'up' : 'pricey'}">${s.name} ${s.delta > 0 ? '+' : ''}${s.delta}</span>`),
-    ...fx.caps.map((c) => `<span class="chip cheap">${c.name} cap +${c.bonus}</span>`),
+    ...fx.caps.map((c) => (c.ceiling !== undefined ? `<span class="chip cheap">${c.name} max ${c.ceiling}</span>` : `<span class="chip cheap">${c.name} cap ${c.bonus > 0 ? '+' : ''}${c.bonus}</span>`)),
   ];
   $('#bodyFx').innerHTML = parts.length ? parts.join('') : '<span class="muted small">Average build: no rating shifts.</span>';
 }
@@ -374,7 +374,7 @@ function simulateNext() {
   const mate = pick(['Jordan', 'Chris', 'Reed', 'Tate', 'Lewis', 'Kane', 'Ibarra', 'Walsh']);
   const opponent = pick(league.teams);
   const res = simulateGame({
-    ratings: state.ratings, overall: ovr, pos: state.pos, minutes: E.playMinutes(state),
+    ratings: state.ratings, overall: ovr, pos: state.pos, minutes: E.playMinutes(state), height: state.body.height,
     league, opponent, name: state.name.split(' ').slice(-1)[0] || 'You', mate,
   });
   return { res, opponent };

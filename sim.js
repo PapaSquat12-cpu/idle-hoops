@@ -1,7 +1,7 @@
 // ===== Possession-level game simulation with play-by-play events =====
 // Pure logic (no DOM) so it can be balance-tested under Node.
 
-import { coreWeights, SHOT_FLOOR } from './data.js';
+import { coreWeights, SHOT_FLOOR, BODY } from './data.js';
 
 const POSSESSIONS = 100;   // possessions per team per game (4 quarters x 25)
 const REB_POS = { PG: 0.4, SG: 0.55, SF: 0.85, PF: 1.15, C: 1.3 };
@@ -79,6 +79,15 @@ export function simulateGame(o) {
   const rp = REB_POS[o.pos] ?? 1;
   // Rebound chance grows with the square of the rating, so average ratings get few boards
   const rebP = (rating, scale) => Math.min(0.25, rp * scale * Math.pow(rating / 100, 2));
+  // Vertical scales boards and blocks: 0.6x at vertical 0, 1.0x at vertical 100. Low leap caps the rating's effect.
+  const leap = (r) => 0.6 + 0.4 * clamp((r.vert ?? 50) / 100, 0, 1);
+  // Hustle scales offensive boards and steals: 0.7x at hustle 0, 1.0x at hustle 100 (smaller range so it stacks with vertical)
+  const motor = (r) => 0.7 + 0.3 * clamp((r.hustle ?? 50) / 100, 0, 1);
+  // Strength scales all boards: 0.85x at strength 0, 1.0x at strength 100
+  const brawn = (r) => 0.85 + 0.15 * clamp((r.str ?? 50) / 100, 0, 1);
+  // Height scales all boards: 0.85x at the shortest listed height, 1.0x at the tallest (inches, BODY.height range)
+  const reach = clamp(((o.height ?? BODY.height.def) - BODY.height.min) / (BODY.height.max - BODY.height.min), 0, 1);
+  const reachMult = 0.85 + 0.15 * reach;
 
   const box = { min: 0, pts: 0, fgm: 0, fga: 0, tpm: 0, tpa: 0, ftm: 0, fta: 0, orb: 0, drb: 0, ast: 0, stl: 0, blk: 0, tov: 0, pf: 0 };
   const events = [];
@@ -107,17 +116,19 @@ export function simulateGame(o) {
         if (chance(mp)) {
           const three = chance(0.36);
           own += three ? 3 : 2;
-          if (chance(clamp(0.05 + r.pass / 400, 0.05, 0.3))) {
+          // Basketball IQ and court vision: +/-6 points each on assist chance (0 to 100, centered on 70)
+          if (chance(clamp(0.05 + r.pass / 400 + (r.iq - 70) / 800 + (r.vision - 70) / 800, 0.05, 0.3))) {
             box.ast++;
             push(i, 'key', pick(T.assist));
           } else push(i, 'team', pick(T.teamMake));
         } else {
-          if (chance(rebP(r.orb, 0.08))) { box.orb++; push(i, 'key', pick(T.orb)); }
+          if (chance(rebP(r.orb * leap(r) * motor(r) * brawn(r) * reachMult, 0.08))) { box.orb++; push(i, 'key', pick(T.orb)); }
           else push(i, 'team', pick(T.teamMiss));
         }
       } else {
         // You have the ball
-        if (chance(clamp(0.04 + (100 - r.handle) / 900 + (100 - r.iq) / 1500, 0.03, 0.14))) {
+        // Ball handling is the main turnover driver (up to about 17 points); low IQ adds up to about 10 more
+        if (chance(clamp(0.03 + (100 - r.handle) / 600 + (100 - r.iq) / 1000, 0.03, 0.2))) {
           box.tov++;
           push(i, 'bad', pick(T.tov));
         } else {
@@ -130,6 +141,8 @@ export function simulateGame(o) {
                 : type === 'mid' ? 0.25 + r.mid / 420
                 : 0.34 + r.inside / 380;
           p -= (oppQ - 55) / 300 + 0.03;
+          // Basketball IQ: +/-6 points on make chance (IQ 0 to 100, centered on 70)
+          p += (r.iq - 70) / 800;
           if (clutchTime) p += (r.clutch - 50) / 500;
           p = clamp(p, 0.1, 0.85);
 
@@ -153,7 +166,7 @@ export function simulateGame(o) {
             else { box.pts += 2; own += 2; }
             push(i, 'key', pick(T[type]));
           } else {
-            if (chance(rebP(r.orb, 0.2))) {
+            if (chance(rebP(r.orb * leap(r) * motor(r) * brawn(r) * reachMult, 0.2))) {
               box.orb++;
               push(i, 'key', pick(T['miss' + (type === 'three' ? 'Three' : type === 'mid' ? 'Mid' : 'In')]));
               push(i, 'key', pick(T.orb));
@@ -166,19 +179,20 @@ export function simulateGame(o) {
     }
 
     // ---------- OPPONENT POSSESSION ----------
-    const defComp = (r.perD + r.intD) / 2;
+    // Strength scales interior defense: 0.6x at strength 0, 1.0x at strength 100
+    const defComp = (r.perD + r.intD * (0.6 + 0.4 * clamp((r.str ?? 50) / 100, 0, 1))) / 2;
     let oMake = 0.47 + (oppQ - ownQ) / 250;
     if (on) oMake -= (defComp - 50) / 500;
     oMake = clamp(oMake, 0.2, 0.75);
 
-    if (on && chance(0.0005 + 0.035 * Math.pow(r.steal / 100, 2.5))) {
+    if (on && chance(0.0005 + 0.035 * Math.pow((r.steal * motor(r)) / 100, 2.5))) {
       box.stl++;
       push(i, 'key', pick(T.steal));
       continue;
     }
     if (on && chance(0.03)) { box.pf++; push(i, 'bad', pick(T.defFoul)); }
 
-    if (on && chance(0.0005 + 0.035 * Math.pow(r.block / 100, 3))) {
+    if (on && chance(0.0005 + 0.035 * Math.pow((r.block * leap(r) * reachMult) / 100, 3))) {
       box.blk++;
       push(i, 'key', pick(T.block));
       if (chance(0.5)) { box.drb++; push(i, 'key', pick(T.drb)); }
@@ -188,7 +202,7 @@ export function simulateGame(o) {
       opp += 2 + (chance(0.36) ? 1 : 0);
       push(i, on ? 'bad' : 'opp', pick(T.oppMake));
     } else {
-      if (on && chance(rebP(r.drb, 0.35))) { box.drb++; push(i, 'key', pick(T.drb)); }
+      if (on && chance(rebP(r.drb * leap(r) * brawn(r) * reachMult, 0.35))) { box.drb++; push(i, 'key', pick(T.drb)); }
       else push(i, 'opp', pick(T.oppMiss));
     }
   }
